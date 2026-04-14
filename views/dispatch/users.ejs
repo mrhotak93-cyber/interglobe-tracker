@@ -44,6 +44,7 @@
 
   <article class="card">
     <h2>Comptes existants</h2>
+
     <div class="table-wrap">
       <table>
         <thead>
@@ -61,11 +62,31 @@
               <td><%= item.full_name %></td>
               <td><%= item.username %></td>
               <td><span class="badge neutral"><%= item.role %></span></td>
-              <td><%= item.active ? 'Oui' : 'Non' %></td>
+              <td><%= item.is_active ? 'Oui' : 'Non' %></td>
+
               <td>
-                <form action="/dispatch/users/<%= item.id %>/toggle" method="POST" class="inline-form">
-                  <button class="btn small" type="submit"><%= item.active ? 'Désactiver' : 'Activer' %></button>
-                </form>
+                <div class="inline-actions">
+
+                  <!-- Activer / Désactiver -->
+                  <form action="/dispatch/users/<%= item.id %>/toggle" method="POST" class="inline-form">
+                    <button class="btn small" type="submit">
+                      <%= item.is_active ? 'Désactiver' : 'Activer' %>
+                    </button>
+                  </form>
+
+                  <!-- Supprimer -->
+                  <form
+                    action="/dispatch/users/<%= item.id %>/delete"
+                    method="POST"
+                    class="inline-form"
+                    onsubmit="return confirm('Supprimer cet utilisateur ?');"
+                  >
+                    <button class="btn small danger" type="submit">
+                      Supprimer
+                    </button>
+                  </form>
+
+                </div>
               </td>
             </tr>
           <% }) %>

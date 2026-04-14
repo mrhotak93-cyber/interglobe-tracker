@@ -736,6 +736,109 @@ app.post('/dispatch/users/:id/toggle', requireRole('dispatch'), async (req, res)
   }
 });
 
+app.post('/dispatch/users/:id/delete', requireRole('dispatch'), async (req, res) => {
+  try {
+    const profileId = req.params.id;
+
+    const { data: profile, error: profileFetchError } = await admin
+      .from('profiles')
+      .select('*')
+      .eq('id', profileId)
+      .single();
+    if (profileFetchError) throw profileFetchError;
+
+    if (profile.username === 'dispatch') {
+      flash(req, 'Le compte dispatch principal ne peut pas être supprimé.');
+      return res.redirect('/dispatch/users');
+    }
+
+    const { error: toursDriverError } = await admin
+      .from('tours')
+      .update({ assigned_driver_profile_id: null })
+      .eq('assigned_driver_profile_id', profileId);
+    if (toursDriverError) throw toursDriverError;
+
+    const { error: toursClientError } = await admin
+      .from('tours')
+      .update({ client_profile_id: null })
+      .eq('client_profile_id', profileId);
+    if (toursClientError) throw toursClientError;
+
+    const { error: proofError } = await admin
+      .from('proof_photos')
+      .delete()
+      .eq('driver_profile_id', profileId);
+    if (proofError) throw proofError;
+
+    const { error: gpsError } = await admin
+      .from('gps_tracking_points')
+      .delete()
+      .eq('driver_profile_id', profileId);
+    if (gpsError) throw gpsError;
+
+    const { error: profileDeleteError } = await admin
+      .from('profiles')
+      .delete()
+      .eq('id', profileId);
+    if (profileDeleteError) throw profileDeleteError;
+
+    if (profile.auth_user_id) {
+      const { error: authDeleteError } = await admin.auth.admin.deleteUser(profile.auth_user_id);
+      if (authDeleteError) throw authDeleteError;
+    }
+
+    flash(req, 'Utilisateur supprimé.');
+    res.redirect('/dispatch/users');
+  } catch (error) {
+    console.error(error);
+    flash(req, `Erreur suppression utilisateur : ${error.message}`);
+    res.redirect('/dispatch/users');
+  }
+});
+
+app.post('/dispatch/tours/:id/delete', requireRole('dispatch'), async (req, res) => {
+  try {
+    const tourId = req.params.id;
+
+    const { error: proofsError } = await admin
+      .from('proof_photos')
+      .delete()
+      .eq('tour_id', tourId);
+    if (proofsError) throw proofsError;
+
+    const { error: gpsError } = await admin
+      .from('gps_tracking_points')
+      .delete()
+      .eq('tour_id', tourId);
+    if (gpsError) throw gpsError;
+
+    const { error: reportsError } = await admin
+      .from('client_reports')
+      .delete()
+      .eq('tour_id', tourId);
+    if (reportsError) throw reportsError;
+
+    const { error: stopsError } = await admin
+      .from('tour_stops')
+      .delete()
+      .eq('tour_id', tourId);
+    if (stopsError) throw stopsError;
+
+    const { error: tourError } = await admin
+      .from('tours')
+      .delete()
+      .eq('id', tourId);
+    if (tourError) throw tourError;
+
+    flash(req, 'Tournée supprimée.');
+    res.redirect('/dispatch/tours');
+  } catch (error) {
+    console.error(error);
+    flash(req, `Erreur suppression tournée : ${error.message}`);
+    res.redirect('/dispatch/tours');
+  }
+});
+
 app.get('/dispatch/tours', requireRole('dispatch'), async (req, res) => {
   try {
     const tours = await fetchTours();

@@ -90,6 +90,15 @@
               <div class="inline-actions">
                 <a class="btn small" href="/dispatch/tours/<%= tour.id %>">Détail</a>
                 <a class="btn small" href="/dispatch/tours/<%= tour.id %>/edit">Modifier</a>
+
+                <form
+                  action="/dispatch/tours/<%= tour.id %>/delete"
+                  method="POST"
+                  style="display:inline;"
+                  onsubmit="return confirm('Supprimer cette tournée ?');"
+                >
+                  <button class="btn small danger" type="submit">Supprimer</button>
+                </form>
               </div>
             </td>
           </tr>
