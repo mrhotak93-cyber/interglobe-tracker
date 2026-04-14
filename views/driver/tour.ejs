@@ -1,16 +1,29 @@
 <%- include('../partials/header', { title, user }) %>
 
 <%
-  const stops = tour.stops || [];
-  let currentIndex = stops.findIndex((s) => s.status !== 'done');
-  if (currentIndex === -1) currentIndex = 0;
+  const allStops = tour.stops || [];
+  const activeStops = allStops.filter((s) => s.status !== 'done');
+  const completedStops = allStops.filter((s) => s.status === 'done');
+
+  let currentIndex = 0;
+  if (!activeStops.length) currentIndex = -1;
+
+  function buildStopAddress(stop) {
+    return (
+      (stop &&
+        (stop.address ||
+          [
+            [stop.street, stop.street_no || stop.street_number].filter(Boolean).join(' '),
+            [stop.postal_code, stop.city].filter(Boolean).join(' ')
+          ]
+            .filter(Boolean)
+            .join(', '))) ||
+      ''
+    );
+  }
 
   function encodeAddress(stop) {
-    const text = stop && (stop.address || [
-      [stop.street, stop.street_no || stop.street_number].filter(Boolean).join(' '),
-      [stop.postal_code, stop.city].filter(Boolean).join(' ')
-    ].filter(Boolean).join(', '));
-    return encodeURIComponent(text || '');
+    return encodeURIComponent(buildStopAddress(stop));
   }
 
   function hasCoords(stop) {
@@ -59,8 +72,20 @@
       </div>
 
       <div class="mobile-driver-kpi">
+        <div class="mobile-driver-kpi-label">Fin</div>
+        <div class="mobile-driver-kpi-value small-value">
+          <%= tour.completed_at ? formatDateTime(tour.completed_at) : '-' %>
+        </div>
+      </div>
+
+      <div class="mobile-driver-kpi">
         <div class="mobile-driver-kpi-label">Km</div>
         <div class="mobile-driver-kpi-value"><%= tour.km_total || 0 %> km</div>
+      </div>
+
+      <div class="mobile-driver-kpi">
+        <div class="mobile-driver-kpi-label">Arrêts restants</div>
+        <div class="mobile-driver-kpi-value"><%= activeStops.length %></div>
       </div>
     </div>
 
@@ -69,7 +94,11 @@
         <button type="submit" class="btn btn-success">Commencer</button>
       </form>
 
-      <form method="POST" action="/driver/tours/<%= tour.id %>/complete" onsubmit="return confirm('Terminer cette tournée ?');">
+      <form
+        method="POST"
+        action="/driver/tours/<%= tour.id %>/complete"
+        onsubmit="return confirm('Terminer cette tournée ?');"
+      >
         <button type="submit" class="btn btn-danger">Terminer</button>
       </form>
     </div>
@@ -80,25 +109,25 @@
     <div id="gps-status" class="mobile-driver-gps-box">Initialisation GPS…</div>
   </section>
 
-  <% if (stops.length) { %>
+  <% if (activeStops.length) { %>
     <section class="mobile-driver-stop mobile-driver-current ultra-current-stop">
       <div class="mobile-driver-stop-badge">Arrêt actif</div>
 
       <div class="ultra-progress">
-        Arrêt <span id="current-stop-number"><%= currentIndex + 1 %></span> / <%= stops.length %>
+        Arrêt <span id="current-stop-number"><%= currentIndex + 1 %></span> / <%= activeStops.length %>
       </div>
 
-      <% stops.forEach((stop, index) => { %>
+      <% activeStops.forEach((stop, index) => { %>
         <div
           class="ultra-stop-slide <%= index === currentIndex ? 'is-active' : '' %>"
           data-stop-index="<%= index %>"
         >
           <h2 class="mobile-driver-stop-title">
-            #<%= index + 1 %> · <%= stop.stop_type %>
+            #<%= stop.sequence_no || (index + 1) %> · <%= stop.stop_type %>
           </h2>
 
           <p class="mobile-driver-main-name"><strong><%= stop.name %></strong></p>
-          <p class="mobile-driver-line"><%= stop.address || '-' %></p>
+          <p class="mobile-driver-line"><%= buildStopAddress(stop) || '-' %></p>
 
           <% if (stop.instructions) { %>
             <p class="mobile-driver-line">
@@ -172,8 +201,18 @@
           <div class="mobile-driver-proof">
             <h3>Preuve de livraison</h3>
 
-            <form method="POST" action="/driver/stops/<%= stop.id %>/proofs" enctype="multipart/form-data">
-              <input type="file" name="photos" multiple accept="image/*" capture="environment" />
+            <form
+              method="POST"
+              action="/driver/stops/<%= stop.id %>/proofs"
+              enctype="multipart/form-data"
+            >
+              <input
+                type="file"
+                name="photos"
+                multiple
+                accept="image/*"
+                capture="environment"
+              />
               <textarea name="note" placeholder="Note optionnelle"></textarea>
               <button type="submit" class="btn primary">Envoyer les preuves</button>
             </form>
@@ -186,17 +225,37 @@
         <button type="button" class="btn primary" id="next-stop-btn">Arrêt suivant</button>
       </div>
     </section>
+  <% } else { %>
+    <section class="mobile-driver-stop mobile-driver-current ultra-current-stop">
+      <div class="mobile-driver-stop-badge">Tournée terminée</div>
+      <h2 class="mobile-driver-stop-title">Plus aucun arrêt actif</h2>
+      <p class="mobile-driver-line">
+        Tous les arrêts sont terminés. Tu peux clôturer la tournée.
+      </p>
 
-    <section class="mobile-driver-stop-list">
+      <div class="mobile-driver-actions">
+        <form
+          method="POST"
+          action="/driver/tours/<%= tour.id %>/complete"
+          onsubmit="return confirm('Terminer cette tournée ?');"
+        >
+          <button type="submit" class="btn btn-danger">Terminer la tournée</button>
+        </form>
+      </div>
+    </section>
+  <% } %>
+
+  <% if (activeStops.length) { %>
+    <section class="mobile-driver-stop-list" id="remaining-stops-list">
       <div class="section-header">
-        <h2>Vue rapide tournée</h2>
+        <h2>Arrêts restants</h2>
       </div>
 
-      <% stops.forEach((stop, index) => { %>
+      <% activeStops.forEach((stop, index) => { %>
         <div class="ultra-stop-summary <%= index === currentIndex ? 'active' : '' %>">
           <div>
-            <strong>#<%= index + 1 %> - <%= stop.name %></strong>
-            <div class="small-muted"><%= stop.address || '-' %></div>
+            <strong>#<%= stop.sequence_no || (index + 1) %> - <%= stop.name %></strong>
+            <div class="small-muted"><%= buildStopAddress(stop) || '-' %></div>
           </div>
           <div>
             <span class="badge <%= stop.status %>"><%= stop.status %></span>
@@ -204,10 +263,25 @@
         </div>
       <% }) %>
     </section>
-  <% } else { %>
-    <section class="mobile-driver-stop">
-      <h2 class="mobile-driver-stop-title">Aucun arrêt</h2>
-      <p class="mobile-driver-line">Cette tournée ne contient encore aucun arrêt.</p>
+  <% } %>
+
+  <% if (completedStops.length) { %>
+    <section class="mobile-driver-stop-list">
+      <div class="section-header">
+        <h2>Arrêts terminés</h2>
+      </div>
+
+      <% completedStops.forEach((stop) => { %>
+        <div class="ultra-stop-summary completed">
+          <div>
+            <strong>#<%= stop.sequence_no || '-' %> - <%= stop.name %></strong>
+            <div class="small-muted"><%= buildStopAddress(stop) || '-' %></div>
+          </div>
+          <div>
+            <span class="badge done">done</span>
+          </div>
+        </div>
+      <% }) %>
     </section>
   <% } %>
 
@@ -217,7 +291,11 @@
         <button type="submit" class="btn btn-success">Commencer</button>
       </form>
 
-      <form method="POST" action="/driver/tours/<%= tour.id %>/complete" onsubmit="return confirm('Terminer cette tournée ?');">
+      <form
+        method="POST"
+        action="/driver/tours/<%= tour.id %>/complete"
+        onsubmit="return confirm('Terminer cette tournée ?');"
+      >
         <button type="submit" class="btn btn-danger">Terminer</button>
       </form>
     </div>
@@ -290,6 +368,9 @@
     const prevBtn = document.getElementById('prev-stop-btn');
     const nextBtn = document.getElementById('next-stop-btn');
     const currentStopNumber = document.getElementById('current-stop-number');
+    const summaries = Array.from(
+      document.querySelectorAll('#remaining-stops-list .ultra-stop-summary')
+    );
 
     if (!slides.length || !prevBtn || !nextBtn) return;
 
@@ -299,6 +380,10 @@
     function renderSlide() {
       slides.forEach((slide, index) => {
         slide.classList.toggle('is-active', index === currentIndex);
+      });
+
+      summaries.forEach((row, index) => {
+        row.classList.toggle('active', index === currentIndex);
       });
 
       if (currentStopNumber) {
