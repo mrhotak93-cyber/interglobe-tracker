@@ -1,0 +1,33 @@
+<%- include('partials/header', { title, user }) %>
+
+<section class="auth-wrap">
+  <div class="card auth-card">
+    <h1>Connexion</h1>
+    <p class="muted">Connecte-toi avec le profil créé par le dispatch.</p>
+
+    <form action="/login" method="POST" class="stack">
+      <label>
+        <span>Nom d’utilisateur</span>
+        <input type="text" name="username" placeholder="ex: dispatch" required />
+      </label>
+
+      <label>
+        <span>Mot de passe</span>
+        <input type="password" name="password" placeholder="••••" required />
+      </label>
+
+      <button class="btn primary" type="submit">Se connecter</button>
+    </form>
+
+    <div class="demo-box">
+      <strong>Comptes de démo</strong>
+      <ul>
+        <li>dispatch / 1234</li>
+        <li>driver / 1234</li>
+        <li>client / 1234</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<%- include('partials/footer') %>

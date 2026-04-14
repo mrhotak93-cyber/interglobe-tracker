@@ -1,0 +1,102 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="split">
+  <article class="card">
+    <h1>Créer une tournée</h1>
+    <form action="/dispatch/tours" method="POST" class="grid cols-2">
+      <label>
+        <span>Référence</span>
+        <input name="reference" placeholder="T-2026-0002" required />
+      </label>
+      <label>
+        <span>Date</span>
+        <input type="date" name="date" value="<%= today() %>" required />
+      </label>
+      <label>
+        <span>Chauffeur</span>
+        <select name="driver_id">
+          <option value="">-- Choisir --</option>
+          <% drivers.forEach((driver) => { %>
+            <option value="<%= driver.id %>"><%= driver.full_name %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>
+        <span>Client</span>
+        <select name="client_id">
+          <option value="">-- Choisir --</option>
+          <% clients.forEach((client) => { %>
+            <option value="<%= client.id %>"><%= client.full_name %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label class="full">
+        <span>Notes</span>
+        <textarea name="notes" rows="3" placeholder="Instructions générales"></textarea>
+      </label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Créer la tournée</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Dupliquer le planning d’un jour</h2>
+    <form action="/dispatch/tours/duplicate-day" method="POST" class="grid cols-2">
+      <label>
+        <span>Jour source</span>
+        <input type="date" name="source_date" required />
+      </label>
+      <label>
+        <span>Jour cible</span>
+        <input type="date" name="target_date" required />
+      </label>
+      <div class="form-actions">
+        <button class="btn" type="submit">Dupliquer</button>
+      </div>
+    </form>
+  </article>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <h2>Liste des tournées</h2>
+    <a class="btn" href="/dispatch/recurrences">Gérer les récurrences</a>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Date</th>
+          <th>Chauffeur</th>
+          <th>Client</th>
+          <th>Statut</th>
+          <th>Km</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% tours.forEach((tour) => { %>
+          <tr>
+            <td><strong><%= tour.reference %></strong></td>
+            <td><%= tour.date %></td>
+            <td><%= tour.driver_name || '-' %></td>
+            <td><%= tour.client_name || '-' %></td>
+            <td><span class="badge <%= tour.status %>"><%= tour.status %></span></td>
+            <td><%= tour.km_total || 0 %> km</td>
+            <td>
+              <div class="inline-actions">
+                <a class="btn small" href="/dispatch/tours/<%= tour.id %>">Détail</a>
+                <a class="btn small" href="/dispatch/tours/<%= tour.id %>/edit">Modifier</a>
+              </div>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<%- include('../partials/footer') %>

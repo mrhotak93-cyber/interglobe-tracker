@@ -1,0 +1,77 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="card narrow">
+  <h1>Modifier l’arrêt</h1>
+
+  <form action="/dispatch/stops/<%= stop.id %>/edit" method="POST" class="grid cols-2">
+    <label>
+      <span>Ordre</span>
+      <input type="number" name="sequence_no" value="<%= stop.sequence_no %>" required />
+    </label>
+
+    <label>
+      <span>Type</span>
+      <select name="stop_type" required>
+        <option value="loading" <%= stop.stop_type === 'loading' ? 'selected' : '' %>>Chargement</option>
+        <option value="unloading" <%= stop.stop_type === 'unloading' ? 'selected' : '' %>>Déchargement</option>
+      </select>
+    </label>
+
+    <label>
+      <span>Nom</span>
+      <input name="name" value="<%= stop.name %>" required />
+    </label>
+
+    <label>
+      <span>Rue</span>
+      <input name="street" value="<%= stop.street %>" required />
+    </label>
+
+    <label>
+      <span>N°</span>
+      <input name="street_no" value="<%= stop.street_no || '' %>" />
+    </label>
+
+    <label>
+      <span>Code postal</span>
+      <input name="postal_code" value="<%= stop.postal_code || '' %>" />
+    </label>
+
+    <label>
+      <span>Commune</span>
+      <input name="city" value="<%= stop.city || '' %>" />
+    </label>
+
+    <label>
+      <span>Contact</span>
+      <input name="contact_name" value="<%= stop.contact_name || '' %>" />
+    </label>
+
+    <label>
+      <span>Téléphone</span>
+      <input name="contact_phone" value="<%= stop.contact_phone || '' %>" />
+    </label>
+
+    <label>
+      <span>Latitude</span>
+      <input name="latitude" value="<%= stop.latitude || '' %>" />
+    </label>
+
+    <label>
+      <span>Longitude</span>
+      <input name="longitude" value="<%= stop.longitude || '' %>" />
+    </label>
+
+    <label class="full">
+      <span>Instructions</span>
+      <textarea name="instructions" rows="4"><%= stop.instructions || '' %></textarea>
+    </label>
+
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Enregistrer</button>
+      <a class="btn" href="/dispatch/tours/<%= stop.tour_id %>">Retour à la tournée</a>
+    </div>
+  </form>
+</section>
+
+<%- include('../partials/footer') %>

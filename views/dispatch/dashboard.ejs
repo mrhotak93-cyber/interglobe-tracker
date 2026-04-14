@@ -1,0 +1,67 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="hero">
+  <div>
+    <h1>Tableau de bord dispatch</h1>
+    <p class="muted">Pilotage simple des comptes, tournées et récurrences.</p>
+  </div>
+  <div class="actions">
+    <a class="btn primary" href="/dispatch/tours">Créer / gérer les tournées</a>
+    <a class="btn" href="/dispatch/users">Gérer les comptes</a>
+  </div>
+</section>
+
+<section class="grid cols-4">
+  <article class="card stat-card">
+    <div class="stat-label">Utilisateurs</div>
+    <div class="stat-value"><%= counts.users %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Tournées du jour</div>
+    <div class="stat-value"><%= counts.toursToday %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Tournées en cours</div>
+    <div class="stat-value"><%= counts.activeTours %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Récurrences actives</div>
+    <div class="stat-value"><%= counts.recurrences %></div>
+  </article>
+</section>
+
+<section class="card">
+  <div class="section-header">
+    <h2>Dernières tournées</h2>
+    <a class="btn" href="/dispatch/tours">Voir tout</a>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Date</th>
+          <th>Chauffeur</th>
+          <th>Client</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% tours.forEach((tour) => { %>
+          <tr>
+            <td><strong><%= tour.reference %></strong></td>
+            <td><%= tour.date %></td>
+            <td><%= tour.driver_name || '-' %></td>
+            <td><%= tour.client_name || '-' %></td>
+            <td><span class="badge <%= tour.status %>"><%= tour.status %></span></td>
+            <td><a class="btn small" href="/dispatch/tours/<%= tour.id %>">Ouvrir</a></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<%- include('../partials/footer') %>

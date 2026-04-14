@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= title ? `${title} · InterGlobe Tracker` : 'InterGlobe Tracker' %></title>
+  <link rel="stylesheet" href="/public/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div>
+        <a href="/" class="brand">InterGlobe Tracker</a>
+        <% if (user) { %>
+          <div class="sub-brand"><%= user.full_name %> · <%= user.role %></div>
+        <% } %>
+      </div>
+      <% if (user) { %>
+        <nav class="nav">
+          <% if (user.role === 'dispatch') { %>
+            <a href="/dispatch">Dashboard</a>
+            <a href="/dispatch/users">Utilisateurs</a>
+            <a href="/dispatch/tours">Tournées</a>
+            <a href="/dispatch/recurrences">Récurrences</a>
+          <% } %>
+          <% if (user.role === 'driver') { %>
+            <a href="/driver">Mes tournées</a>
+          <% } %>
+          <% if (user.role === 'client') { %>
+            <a href="/client">Mes suivis</a>
+          <% } %>
+          <form action="/logout" method="POST" class="inline-form">
+            <button class="btn ghost" type="submit">Déconnexion</button>
+          </form>
+        </nav>
+      <% } %>
+    </div>
+  </header>
+
+  <main class="container page">
+    <% if (flash) { %>
+      <div class="flash"><%= flash %></div>
+    <% } %>

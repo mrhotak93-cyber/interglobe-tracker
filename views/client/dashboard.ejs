@@ -1,0 +1,28 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="hero">
+  <div>
+    <h1>Suivi client</h1>
+    <p class="muted">Visualisation simple des tournées, heures de passage et preuves.</p>
+  </div>
+</section>
+
+<section class="stack">
+  <% tours.forEach((tour) => { %>
+    <article class="card">
+      <div class="section-header">
+        <div>
+          <h2><%= tour.reference %></h2>
+          <div class="muted">Date : <%= tour.date %> · Chauffeur : <%= tour.driver_name || '-' %></div>
+        </div>
+        <span class="badge <%= tour.status %>"><%= tour.status %></span>
+      </div>
+
+      <div class="inline-actions">
+        <a class="btn primary" href="/client/tours/<%= tour.id %>">Voir le suivi</a>
+      </div>
+    </article>
+  <% }) %>
+</section>
+
+<%- include('../partials/footer') %>

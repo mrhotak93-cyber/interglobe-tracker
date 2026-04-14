@@ -1,0 +1,59 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="card narrow">
+  <h1>Modifier la tournée</h1>
+
+  <form action="/dispatch/tours/<%= tour.id %>/edit" method="POST" class="grid cols-2">
+    <label>
+      <span>Référence</span>
+      <input name="reference" value="<%= tour.reference %>" required />
+    </label>
+
+    <label>
+      <span>Date</span>
+      <input type="date" name="date" value="<%= tour.date %>" required />
+    </label>
+
+    <label>
+      <span>Chauffeur</span>
+      <select name="driver_id">
+        <option value="">-- Choisir --</option>
+        <% drivers.forEach((driver) => { %>
+          <option value="<%= driver.id %>" <%= Number(tour.driver_id) === Number(driver.id) ? 'selected' : '' %>><%= driver.full_name %></option>
+        <% }) %>
+      </select>
+    </label>
+
+    <label>
+      <span>Client</span>
+      <select name="client_id">
+        <option value="">-- Choisir --</option>
+        <% clients.forEach((client) => { %>
+          <option value="<%= client.id %>" <%= Number(tour.client_id) === Number(client.id) ? 'selected' : '' %>><%= client.full_name %></option>
+        <% }) %>
+      </select>
+    </label>
+
+    <label>
+      <span>Statut</span>
+      <select name="status">
+        <option value="draft" <%= tour.status === 'draft' ? 'selected' : '' %>>draft</option>
+        <option value="assigned" <%= tour.status === 'assigned' ? 'selected' : '' %>>assigned</option>
+        <option value="in_progress" <%= tour.status === 'in_progress' ? 'selected' : '' %>>in_progress</option>
+        <option value="completed" <%= tour.status === 'completed' ? 'selected' : '' %>>completed</option>
+      </select>
+    </label>
+
+    <label class="full">
+      <span>Notes</span>
+      <textarea name="notes" rows="4"><%= tour.notes || '' %></textarea>
+    </label>
+
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Enregistrer</button>
+      <a class="btn" href="/dispatch/tours/<%= tour.id %>">Retour</a>
+    </div>
+  </form>
+</section>
+
+<%- include('../partials/footer') %>

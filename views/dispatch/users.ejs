@@ -1,0 +1,78 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="split">
+  <article class="card">
+    <h1>Créer un utilisateur</h1>
+    <form action="/dispatch/users" method="POST" class="grid cols-2">
+      <label>
+        <span>Nom complet</span>
+        <input name="full_name" required />
+      </label>
+      <label>
+        <span>Nom d’utilisateur</span>
+        <input name="username" required />
+      </label>
+      <label>
+        <span>Mot de passe</span>
+        <input type="password" name="password" required />
+      </label>
+      <label>
+        <span>Rôle</span>
+        <select name="role" required>
+          <option value="dispatch">Dispatch</option>
+          <option value="driver">Chauffeur</option>
+          <option value="client">Client</option>
+        </select>
+      </label>
+      <label>
+        <span>Téléphone</span>
+        <input name="phone" />
+      </label>
+      <label>
+        <span>Société</span>
+        <input name="company" value="InterGlobe" />
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="active" checked />
+        <span>Compte actif</span>
+      </label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Créer le compte</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Comptes existants</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Login</th>
+            <th>Rôle</th>
+            <th>Actif</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% users.forEach((item) => { %>
+            <tr>
+              <td><%= item.full_name %></td>
+              <td><%= item.username %></td>
+              <td><span class="badge neutral"><%= item.role %></span></td>
+              <td><%= item.active ? 'Oui' : 'Non' %></td>
+              <td>
+                <form action="/dispatch/users/<%= item.id %>/toggle" method="POST" class="inline-form">
+                  <button class="btn small" type="submit"><%= item.active ? 'Désactiver' : 'Activer' %></button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </article>
+</section>
+
+<%- include('../partials/footer') %>

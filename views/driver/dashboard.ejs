@@ -1,0 +1,28 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="hero">
+  <div>
+    <h1>Mes tournées</h1>
+    <p class="muted">Interface terrain simple : naviguer, arrivé, preuve, départ.</p>
+  </div>
+</section>
+
+<section class="stack">
+  <% tours.forEach((tour) => { %>
+    <article class="card">
+      <div class="section-header">
+        <div>
+          <h2><%= tour.reference %></h2>
+          <div class="muted">Date : <%= tour.date %> · Client : <%= tour.client_name || '-' %></div>
+        </div>
+        <span class="badge <%= tour.status %>"><%= tour.status %></span>
+      </div>
+
+      <div class="inline-actions">
+        <a class="btn primary" href="/driver/tours/<%= tour.id %>">Ouvrir la tournée</a>
+      </div>
+    </article>
+  <% }) %>
+</section>
+
+<%- include('../partials/footer') %>

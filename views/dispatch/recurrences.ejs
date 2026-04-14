@@ -1,0 +1,118 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="split">
+  <article class="card">
+    <h1>Créer une récurrence</h1>
+    <form action="/dispatch/recurrences" method="POST" class="grid cols-2">
+      <label class="full">
+        <span>Tournée modèle</span>
+        <select name="source_tour_id" required>
+          <% tours.forEach((tour) => { %>
+            <option value="<%= tour.id %>"><%= tour.reference %> · <%= tour.date %> · <%= tour.driver_name || '-' %> / <%= tour.client_name || '-' %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>
+        <span>Nom</span>
+        <input name="name" required />
+      </label>
+      <label>
+        <span>Fréquence</span>
+        <select name="frequency" required>
+          <option value="daily">Tous les jours</option>
+          <option value="weekly">Hebdomadaire</option>
+        </select>
+      </label>
+      <label class="full">
+        <span>Jours si hebdomadaire</span>
+        <input name="weekdays" placeholder="mon,tue,wed,thu,fri" />
+      </label>
+      <label>
+        <span>Date début</span>
+        <input type="date" name="start_date" value="<%= today() %>" required />
+      </label>
+      <label>
+        <span>Date fin</span>
+        <input type="date" name="end_date" />
+      </label>
+      <div class="form-actions">
+        <button class="btn primary" type="submit">Créer</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Règle métier</h2>
+    <p class="muted">
+      Les tournées générées depuis une récurrence deviennent des tournées normales.
+      Tu peux donc ensuite modifier une journée précise sans casser le modèle.
+    </p>
+  </article>
+</section>
+
+<section class="stack top-gap">
+  <% recurrences.forEach((item) => { %>
+    <article class="card">
+      <div class="section-header">
+        <div>
+          <h3><%= item.name %></h3>
+          <div class="muted">
+            Source : <strong><%= item.reference %></strong> · fréquence : <strong><%= item.frequency %></strong>
+          </div>
+        </div>
+        <span class="badge <%= item.active ? 'assigned' : 'neutral' %>"><%= item.active ? 'active' : 'inactive' %></span>
+      </div>
+
+      <div class="grid cols-2">
+        <form action="/dispatch/recurrences/<%= item.id %>/update" method="POST" class="grid cols-2">
+          <label>
+            <span>Nom</span>
+            <input name="name" value="<%= item.name %>" required />
+          </label>
+          <label>
+            <span>Fréquence</span>
+            <select name="frequency">
+              <option value="daily" <%= item.frequency === 'daily' ? 'selected' : '' %>>Tous les jours</option>
+              <option value="weekly" <%= item.frequency === 'weekly' ? 'selected' : '' %>>Hebdomadaire</option>
+            </select>
+          </label>
+          <label class="full">
+            <span>Jours</span>
+            <input name="weekdays" value="<%= item.weekdays || '' %>" />
+          </label>
+          <label>
+            <span>Date début</span>
+            <input type="date" name="start_date" value="<%= item.start_date %>" required />
+          </label>
+          <label>
+            <span>Date fin</span>
+            <input type="date" name="end_date" value="<%= item.end_date || '' %>" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" name="active" <%= item.active ? 'checked' : '' %> />
+            <span>Active</span>
+          </label>
+          <div class="form-actions">
+            <button class="btn" type="submit">Mettre à jour</button>
+          </div>
+        </form>
+
+        <form action="/dispatch/recurrences/<%= item.id %>/generate" method="POST" class="grid cols-2 bordered-left">
+          <label>
+            <span>Générer à partir du</span>
+            <input type="date" name="range_start" value="<%= today() %>" required />
+          </label>
+          <label>
+            <span>Jusqu’au</span>
+            <input type="date" name="range_end" value="<%= today() %>" required />
+          </label>
+          <div class="form-actions">
+            <button class="btn primary" type="submit">Générer les tournées</button>
+          </div>
+        </form>
+      </div>
+    </article>
+  <% }) %>
+</section>
+
+<%- include('../partials/footer') %>
