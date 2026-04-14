@@ -17,7 +17,9 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'interglobe-session-secret-
 const PROOF_BUCKET = 'proof-photos';
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !SUPABASE_SECRET_KEY) {
-  console.warn('Variables Supabase manquantes. Ajoute SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY et SUPABASE_SECRET_KEY.');
+  console.warn(
+    'Variables Supabase manquantes. Ajoute SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY et SUPABASE_SECRET_KEY.'
+  );
 }
 
 const admin = createClient(
@@ -134,7 +136,7 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   const dLon = toRad(lon2 - lon1);
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lon2)) * Math.sin(dLon / 2) ** 2;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
@@ -186,6 +188,7 @@ async function getProfileByUsername(username) {
 function normalizeTour(row, profilesMap) {
   const driver = profilesMap[row.assigned_driver_profile_id] || null;
   const client = profilesMap[row.client_profile_id] || null;
+
   return {
     ...row,
     reference: row.reference_code,
@@ -414,12 +417,14 @@ function templateMatchesDate(template, dateStr) {
   if (template.recurrence_start_date && dateStr < template.recurrence_start_date) return false;
   if (template.recurrence_end_date && dateStr > template.recurrence_end_date) return false;
   if (template.recurrence === 'daily') return true;
+
   if (template.recurrence === 'weekly') {
     const d = new Date(`${dateStr}T00:00:00Z`);
     const weekday = d.getUTCDay();
     const allowed = template.recurrence_weekdays || [];
     return allowed.length ? allowed.includes(weekday) : true;
   }
+
   return false;
 }
 
@@ -441,6 +446,7 @@ async function generateToursFromTemplate(templateId, rangeStart, rangeEnd, creat
   const generatedDates = dateRange(rangeStart, rangeEnd).filter((dateStr) =>
     templateMatchesDate(template, dateStr)
   );
+
   let createdCount = 0;
 
   for (const dateStr of generatedDates) {
@@ -489,6 +495,7 @@ async function generateToursFromTemplate(templateId, rangeStart, rangeEnd, creat
         latitude: stop.latitude || null,
         longitude: stop.longitude || null
       }));
+
       const { error: insertStopsError } = await admin.from('tour_stops').insert(payloads);
       if (insertStopsError) throw insertStopsError;
     }
@@ -540,20 +547,47 @@ app.post('/login', async (req, res) => {
   try {
     const username = String(req.body.username || '').trim();
     const password = String(req.body.password || '');
+
+    console.log('[LOGIN] username reçu =', username);
+
     if (!username || !password) {
       flash(req, 'Nom d’utilisateur et mot de passe requis.');
       return res.redirect('/login');
     }
 
     const profile = await getProfileByUsername(username);
+    console.log(
+      '[LOGIN] profile trouvé =',
+      profile
+        ? {
+            id: profile.id,
+            username: profile.username,
+            role: profile.role,
+            auth_user_id: profile.auth_user_id,
+            is_active: profile.is_active
+          }
+        : null
+    );
+
     if (!profile || !profile.is_active || !profile.auth_user_id) {
       flash(req, 'Compte introuvable ou inactif.');
       return res.redirect('/login');
     }
 
-    const { data: authInfo, error: authInfoError } = await admin.auth.admin.getUserById(profile.auth_user_id);
-    if (authInfoError || !authInfo?.user?.email) {
-      flash(req, 'Impossible de récupérer le compte de connexion.');
+    const { data: authInfo, error: authInfoError } = await admin.auth.admin.getUserById(
+      profile.auth_user_id
+    );
+
+    if (authInfoError) {
+      console.error('[LOGIN] getUserById error =', authInfoError);
+      flash(req, 'Erreur getUserById.');
+      return res.redirect('/login');
+    }
+
+    console.log('[LOGIN] email auth =', authInfo?.user?.email || null);
+
+    if (!authInfo?.user?.email) {
+      flash(req, 'Email auth introuvable.');
       return res.redirect('/login');
     }
 
@@ -563,8 +597,14 @@ app.post('/login', async (req, res) => {
       password
     });
 
-    if (signInError || !signInData.user) {
-      flash(req, 'Identifiants invalides.');
+    if (signInError) {
+      console.error('[LOGIN] signInWithPassword error =', signInError);
+      flash(req, `Erreur login Supabase: ${signInError.message}`);
+      return res.redirect('/login');
+    }
+
+    if (!signInData?.user) {
+      flash(req, 'Utilisateur non retourné par Supabase.');
       return res.redirect('/login');
     }
 
@@ -577,10 +617,11 @@ app.post('/login', async (req, res) => {
       email: authInfo.user.email
     };
 
+    console.log('[LOGIN] succès pour', username);
     return res.redirect('/');
   } catch (error) {
-    console.error(error);
-    flash(req, 'Erreur de connexion.');
+    console.error('[LOGIN] catch fatal =', error);
+    flash(req, `Erreur de connexion: ${error.message}`);
     return res.redirect('/login');
   }
 });
@@ -594,7 +635,9 @@ app.get('/dispatch', requireRole('dispatch'), async (req, res) => {
   try {
     const users = await fetchAllProfiles();
     const tours = await fetchTours();
-    const { data: templates, error: templateError } = await admin.from('route_templates').select('id');
+    const { data: templates, error: templateError } = await admin
+      .from('route_templates')
+      .select('id');
     if (templateError) throw templateError;
 
     res.render('dispatch/dashboard', {
@@ -699,6 +742,7 @@ app.get('/dispatch/tours', requireRole('dispatch'), async (req, res) => {
     const profiles = await fetchAllProfiles();
     const drivers = profiles.filter((item) => item.role === 'driver' && item.is_active);
     const clients = profiles.filter((item) => item.role === 'client' && item.is_active);
+
     res.render('dispatch/tours', {
       title: 'Tournées',
       tours,
@@ -777,10 +821,17 @@ app.get('/dispatch/tours/:id/edit', requireRole('dispatch'), async (req, res) =>
   try {
     const tour = await fetchTourById(req.params.id);
     if (!tour) return res.status(404).send('Tournée introuvable');
+
     const profiles = await fetchAllProfiles();
     const drivers = profiles.filter((item) => item.role === 'driver');
     const clients = profiles.filter((item) => item.role === 'client');
-    res.render('dispatch/tour_form', { title: 'Modifier tournée', tour, drivers, clients });
+
+    res.render('dispatch/tour_form', {
+      title: 'Modifier tournée',
+      tour,
+      drivers,
+      clients
+    });
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur édition tournée');
@@ -826,8 +877,12 @@ app.post('/dispatch/tours/:id/stops', requireRole('dispatch'), async (req, res) 
       postal_code: String(req.body.postal_code || '').trim() || null,
       city: String(req.body.city || '').trim() || null,
       full_address: [
-        [String(req.body.street || '').trim(), String(req.body.street_no || '').trim()].filter(Boolean).join(' '),
-        [String(req.body.postal_code || '').trim(), String(req.body.city || '').trim()].filter(Boolean).join(' ')
+        [String(req.body.street || '').trim(), String(req.body.street_no || '').trim()]
+          .filter(Boolean)
+          .join(' '),
+        [String(req.body.postal_code || '').trim(), String(req.body.city || '').trim()]
+          .filter(Boolean)
+          .join(' ')
       ]
         .filter(Boolean)
         .join(', '),
@@ -852,9 +907,17 @@ app.post('/dispatch/tours/:id/stops', requireRole('dispatch'), async (req, res) 
 
 app.get('/dispatch/stops/:id/edit', requireRole('dispatch'), async (req, res) => {
   try {
-    const { data: stop, error } = await admin.from('tour_stops').select('*').eq('id', req.params.id).single();
+    const { data: stop, error } = await admin
+      .from('tour_stops')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
     if (error) throw error;
-    res.render('dispatch/stop_form', { title: 'Modifier arrêt', stop: normalizeStop(stop) });
+
+    res.render('dispatch/stop_form', {
+      title: 'Modifier arrêt',
+      stop: normalizeStop(stop)
+    });
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur édition arrêt');
@@ -872,8 +935,12 @@ app.post('/dispatch/stops/:id/edit', requireRole('dispatch'), async (req, res) =
       postal_code: String(req.body.postal_code || '').trim() || null,
       city: String(req.body.city || '').trim() || null,
       full_address: [
-        [String(req.body.street || '').trim(), String(req.body.street_no || '').trim()].filter(Boolean).join(' '),
-        [String(req.body.postal_code || '').trim(), String(req.body.city || '').trim()].filter(Boolean).join(' ')
+        [String(req.body.street || '').trim(), String(req.body.street_no || '').trim()]
+          .filter(Boolean)
+          .join(' '),
+        [String(req.body.postal_code || '').trim(), String(req.body.city || '').trim()]
+          .filter(Boolean)
+          .join(' ')
       ]
         .filter(Boolean)
         .join(', '),
@@ -971,6 +1038,7 @@ app.post('/dispatch/recurrences', requireRole('dispatch'), async (req, res) => {
 app.post('/dispatch/recurrences/:id/update', requireRole('dispatch'), async (req, res) => {
   try {
     const recurrence = req.body.frequency === 'weekly' ? 'weekly' : 'daily';
+
     const { error } = await admin
       .from('route_templates')
       .update({
@@ -1001,6 +1069,7 @@ app.post('/dispatch/recurrences/:id/generate', requireRole('dispatch'), async (r
       req.body.range_end,
       req.session.user.profile_id
     );
+
     flash(req, `${count} tournée(s) générée(s).`);
     res.redirect('/dispatch/recurrences');
   } catch (error) {
@@ -1026,6 +1095,7 @@ app.get('/driver/tours/:id', requireRole('driver'), async (req, res) => {
     if (!tour || tour.driver_id !== req.session.user.profile_id) {
       return res.status(404).send('Tournée introuvable');
     }
+
     res.render('driver/tour', { title: tour.reference, tour });
   } catch (error) {
     console.error(error);
@@ -1058,6 +1128,7 @@ app.post('/driver/tours/:id/start', requireRole('driver'), async (req, res) => {
 app.post('/driver/tours/:id/complete', requireRole('driver'), async (req, res) => {
   try {
     const endedAt = nowIso();
+
     const { error } = await admin
       .from('tours')
       .update({
@@ -1069,6 +1140,7 @@ app.post('/driver/tours/:id/complete', requireRole('driver'), async (req, res) =
     if (error) throw error;
 
     await createClientReport(req.params.id);
+
     flash(req, 'Tournée terminée.');
     res.redirect(`/driver/tours/${req.params.id}`);
   } catch (error) {
@@ -1138,6 +1210,7 @@ app.post('/driver/stops/:id/proofs', requireRole('driver'), upload.array('photos
     const files = req.files || [];
     for (const file of files) {
       const filePath = `${stop.tour_id}/${stop.id}/${Date.now()}-${sanitizeFileName(file.originalname)}`;
+
       const { error: uploadError } = await admin.storage.from(PROOF_BUCKET).upload(filePath, file.buffer, {
         contentType: file.mimetype,
         upsert: false
@@ -1206,6 +1279,7 @@ app.post('/driver/tours/:id/location', requireRole('driver'), async (req, res) =
     if (tourError) throw tourError;
 
     const newKm = Number(tour.total_km || 0) + kmToAdd;
+
     const { error: updateError } = await admin
       .from('tours')
       .update({ total_km: Number(newKm.toFixed(2)) })
@@ -1235,6 +1309,7 @@ app.get('/client/tours/:id', requireRole('client'), async (req, res) => {
     if (!tour || tour.client_id !== req.session.user.profile_id) {
       return res.status(404).send('Tournée introuvable');
     }
+
     res.render('client/tour', { title: tour.reference, tour });
   } catch (error) {
     console.error(error);
@@ -1271,6 +1346,7 @@ app.get('/media/proofs/:id', requireAuth, async (req, res) => {
     if (error) throw error;
 
     const tour = await fetchTourById(proof.tour_id);
+
     const isAllowed =
       req.session.user.role === 'dispatch' ||
       (req.session.user.role === 'driver' && tour.driver_id === req.session.user.profile_id) ||
@@ -1285,6 +1361,7 @@ app.get('/media/proofs/:id', requireAuth, async (req, res) => {
 
     const arrayBuffer = await fileData.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
     res.setHeader('Content-Type', fileData.type || 'application/octet-stream');
     res.send(buffer);
   } catch (error) {
