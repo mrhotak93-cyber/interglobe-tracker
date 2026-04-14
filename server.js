@@ -1,3 +1,4 @@
+process.env.TZ = 'Europe/Brussels';
 require('dotenv').config();
 const path = require('path');
 const express = require('express');
@@ -63,15 +64,12 @@ const upload = multer({
 
 function today() {
   const now = new Date();
-  const brussels = new Intl.DateTimeFormat('en-CA', {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Brussels',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
   }).format(now);
-
-  return brussels;
-}
 }
 
 function nowIso() {
