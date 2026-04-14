@@ -1,164 +1,176 @@
 <%- include('../partials/header', { title, user }) %>
 
-<section class="hero">
-  <div>
-    <h1><%= tour.reference %></h1>
-    <p class="muted">
-      Client : <strong><%= tour.client_name || '-' %></strong> · Date : <strong><%= tour.date %></strong>
+<div class="mobile-driver-shell">
+  <section class="mobile-driver-topcard">
+    <h1 class="mobile-driver-title"><%= tour.reference %></h1>
+    <p class="mobile-driver-subtitle">
+      Interface terrain chauffeur - simple, rapide et mobile.
     </p>
-  </div>
-  <div class="actions">
-    <form action="/driver/tours/<%= tour.id %>/start" method="POST" class="inline-form">
-      <button class="btn primary" type="submit">Commencer la tournée</button>
-    </form>
-    <form action="/driver/tours/<%= tour.id %>/complete" method="POST" class="inline-form">
-      <button class="btn" type="submit">Terminer la tournée</button>
-    </form>
-  </div>
-</section>
 
-<section class="grid cols-4">
-  <article class="card stat-card">
-    <div class="stat-label">Statut</div>
-    <div class="stat-value badge <%= tour.status %>"><%= tour.status %></div>
-  </article>
-  <article class="card stat-card">
-    <div class="stat-label">Début</div>
-    <div class="stat-value small-value"><%= formatDateTime(tour.started_at) || '-' %></div>
-  </article>
-  <article class="card stat-card">
-    <div class="stat-label">Fin</div>
-    <div class="stat-value small-value"><%= formatDateTime(tour.completed_at) || '-' %></div>
-  </article>
-  <article class="card stat-card">
-    <div class="stat-label">Km estimés</div>
-    <div class="stat-value"><span id="kmValue"><%= tour.km_total || 0 %></span> km</div>
-  </article>
-</section>
-
-<section class="card top-gap">
-  <h2>Tracking GPS</h2>
-  <p class="muted">
-    Tant que cette page reste ouverte, le navigateur envoie la position au serveur.
-    Donne l’autorisation de localisation pour avoir un suivi client en direct.
-  </p>
-  <div id="gpsStatus" class="gps-status">Initialisation GPS…</div>
-</section>
-
-<section class="stack top-gap">
-  <% tour.stops.forEach((stop) => { %>
-    <article class="stop-card">
-      <div class="section-header">
-        <div>
-          <div class="stop-seq">#<%= stop.sequence_no %> · <%= stop.stop_type === 'loading' ? 'Chargement' : 'Déchargement' %></div>
-          <h3><%= stop.name %></h3>
-          <div class="muted"><%= stop.address %></div>
-        </div>
-        <span class="badge <%= stop.status %>"><%= stop.status %></span>
+    <div class="mobile-driver-kpis">
+      <div class="mobile-driver-kpi">
+        <div class="mobile-driver-kpi-label">Statut</div>
+        <div class="mobile-driver-kpi-value"><%= tour.status %></div>
       </div>
 
-      <% if (stop.instructions) { %>
-        <p><strong>Instructions :</strong> <%= stop.instructions %></p>
-      <% } %>
-
-      <div class="grid cols-3 compact">
-        <div><strong>Arrivé :</strong> <%= formatDateTime(stop.arrived_at) || '-' %></div>
-        <div><strong>Départ :</strong> <%= formatDateTime(stop.departed_at) || '-' %></div>
-        <div><strong>Contact :</strong> <%= stop.contact_name || '-' %> <%= stop.contact_phone ? `(${stop.contact_phone})` : '' %></div>
+      <div class="mobile-driver-kpi">
+        <div class="mobile-driver-kpi-label">Km estimés</div>
+        <div class="mobile-driver-kpi-value"><%= tour.km_total || 0 %> km</div>
       </div>
 
-      <div class="inline-actions top-gap">
-        <a
-          class="btn primary"
-          target="_blank"
-          href="https://waze.com/ul?q=<%= encodeURIComponent(stop.address) %>&navigate=yes"
-        >Ouvrir dans Waze</a>
-
-        <form action="/driver/stops/<%= stop.id %>/arrive" method="POST" class="inline-form">
-          <button class="btn" type="submit">Arrivé</button>
-        </form>
-
-        <form action="/driver/stops/<%= stop.id %>/depart" method="POST" class="inline-form">
-          <button class="btn" type="submit">Départ</button>
-        </form>
+      <div class="mobile-driver-kpi">
+        <div class="mobile-driver-kpi-label">Début</div>
+        <div class="mobile-driver-kpi-value"><%= tour.started_at ? formatDateTime(tour.started_at) : '-' %></div>
       </div>
 
-      <form action="/driver/stops/<%= stop.id %>/proofs" method="POST" enctype="multipart/form-data" class="upload-box top-gap">
-        <label class="full">
-          <span>Ajouter des photos de preuve</span>
-          <input type="file" name="photos" multiple accept="image/*" />
-        </label>
-        <label class="full">
-          <span>Note</span>
-          <input name="note" placeholder="Optionnel" />
-        </label>
-        <button class="btn small" type="submit">Envoyer les preuves</button>
+      <div class="mobile-driver-kpi">
+        <div class="mobile-driver-kpi-label">Fin</div>
+        <div class="mobile-driver-kpi-value"><%= tour.completed_at ? formatDateTime(tour.completed_at) : '-' %></div>
+      </div>
+    </div>
+
+    <div class="mobile-driver-actions">
+      <form method="POST" action="/driver/tours/<%= tour.id %>/start">
+        <button type="submit" class="btn btn-success">Commencer la tournée</button>
       </form>
 
-      <% if (stop.proofs.length) { %>
-        <div class="proof-grid top-gap">
-          <% stop.proofs.forEach((proof) => { %>
-            <a href="<%= proof.image_path %>" target="_blank" class="proof-item">
-              <img src="<%= proof.image_path %>" alt="preuve" />
-            </a>
-          <% }) %>
-        </div>
+      <form method="POST" action="/driver/tours/<%= tour.id %>/complete">
+        <button type="submit" class="btn btn-danger">Terminer la tournée</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="mobile-driver-status">
+    <h2 class="mobile-driver-stop-title">Tracking GPS</h2>
+    <p class="mobile-driver-line">
+      Tant que cette page reste ouverte, le navigateur envoie la position au serveur.
+      Donne l’autorisation de localisation pour avoir un suivi client en direct.
+    </p>
+    <div id="gps-status" class="mobile-driver-line">Initialisation GPS…</div>
+  </section>
+
+  <% tour.stops.forEach((stop, index) => { %>
+    <section class="mobile-driver-stop">
+      <h2 class="mobile-driver-stop-title">#<%= index + 1 %> · <%= stop.stop_type %></h2>
+
+      <p class="mobile-driver-line"><strong><%= stop.name %></strong></p>
+      <p class="mobile-driver-line"><%= stop.address || '-' %></p>
+
+      <% if (stop.instructions) { %>
+        <p class="mobile-driver-line"><strong>Instructions :</strong> <%= stop.instructions %></p>
       <% } %>
-    </article>
+
+      <p class="mobile-driver-line"><strong>Arrivé :</strong> <%= stop.arrived_at ? formatDateTime(stop.arrived_at) : '-' %></p>
+      <p class="mobile-driver-line"><strong>Départ :</strong> <%= stop.departed_at ? formatDateTime(stop.departed_at) : '-' %></p>
+      <p class="mobile-driver-line"><strong>Contact :</strong> <%= stop.contact_name || '-' %> <%= stop.contact_phone ? ' - ' + stop.contact_phone : '' %></p>
+
+      <div class="mobile-driver-actions">
+        <% if (stop.latitude && stop.longitude) { %>
+          <a
+            class="btn btn-waze"
+            target="_blank"
+            rel="noopener noreferrer"
+            href="https://www.waze.com/ul?ll=<%= stop.latitude %>,<%= stop.longitude %>&navigate=yes"
+          >
+            Ouvrir dans Waze
+          </a>
+        <% } else { %>
+          <button type="button" class="btn btn-muted" disabled>Waze indisponible</button>
+        <% } %>
+
+        <form method="POST" action="/driver/stops/<%= stop.id %>/arrive">
+          <button type="submit" class="btn btn-success">Arrivé</button>
+        </form>
+
+        <form method="POST" action="/driver/stops/<%= stop.id %>/depart">
+          <button type="submit" class="btn">Départ</button>
+        </form>
+      </div>
+
+      <div class="mobile-driver-proof">
+        <h3>Ajouter des photos de preuve</h3>
+
+        <form method="POST" action="/driver/stops/<%= stop.id %>/proofs" enctype="multipart/form-data">
+          <input type="file" name="photos" multiple accept="image/*" />
+          <textarea name="note" placeholder="Note optionnelle"></textarea>
+          <button type="submit" class="btn primary">Envoyer les preuves</button>
+        </form>
+      </div>
+    </section>
   <% }) %>
-</section>
+
+  <div class="mobile-driver-nav">
+    <div class="mobile-driver-nav-grid">
+      <form method="POST" action="/driver/tours/<%= tour.id %>/start">
+        <button type="submit" class="btn btn-success">Commencer</button>
+      </form>
+
+      <form method="POST" action="/driver/tours/<%= tour.id %>/complete">
+        <button type="submit" class="btn btn-danger">Terminer</button>
+      </form>
+    </div>
+  </div>
+</div>
 
 <script>
   (function () {
-    const tourId = <%- JSON.stringify(tour.id) %>;
-    const statusBox = document.getElementById('gpsStatus');
-    const kmValue = document.getElementById('kmValue');
+    const gpsStatus = document.getElementById('gps-status');
+    const tourId = "<%= tour.id %>";
+    let watchId = null;
 
     function updateStatus(text) {
-      statusBox.textContent = text;
+      if (gpsStatus) gpsStatus.textContent = text;
     }
 
-    async function pushLocation(position) {
-      const body = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy
-      };
-
+    async function sendPosition(position) {
       try {
         const res = await fetch(`/driver/tours/${tourId}/location`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          body: JSON.stringify({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy
+          })
         });
+
         const data = await res.json();
         if (data.ok) {
-          kmValue.textContent = data.km;
-          updateStatus(`Position envoyée à ${new Date().toLocaleTimeString('fr-BE')}`);
+          updateStatus(`GPS actif · ${data.km} km`);
         } else {
-          updateStatus('Erreur envoi GPS');
+          updateStatus('Erreur GPS');
         }
-      } catch (error) {
-        updateStatus('Erreur réseau GPS');
+      } catch (err) {
+        updateStatus('Envoi GPS impossible');
       }
     }
 
-    if (!('geolocation' in navigator)) {
-      updateStatus('La géolocalisation n’est pas disponible sur ce navigateur.');
-      return;
+    function startGps() {
+      if (!navigator.geolocation) {
+        updateStatus('Géolocalisation non supportée');
+        return;
+      }
+
+      watchId = navigator.geolocation.watchPosition(
+        sendPosition,
+        function () {
+          updateStatus('Autorisation GPS refusée ou indisponible');
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 10000
+        }
+      );
     }
 
-    navigator.geolocation.watchPosition(
-      pushLocation,
-      function (error) {
-        updateStatus(`Erreur GPS : ${error.message}`);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 10000
+    startGps();
+
+    window.addEventListener('beforeunload', function () {
+      if (watchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
       }
-    );
+    });
   })();
 </script>
 
