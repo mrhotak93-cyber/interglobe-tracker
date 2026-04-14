@@ -865,3 +865,78 @@ th {
     grid-template-columns: 1fr 1fr;
   }
 }
+/* ===== Ultra terrain chauffeur ===== */
+.ultra-driver-shell {
+  padding-bottom: 90px;
+}
+
+.ultra-current-stop {
+  border: 2px solid #bfd5f3;
+}
+
+.ultra-progress {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f2d52;
+  margin-bottom: 12px;
+}
+
+.ultra-stop-slide {
+  display: none;
+}
+
+.ultra-stop-slide.is-active {
+  display: block;
+}
+
+.ultra-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.ultra-nav-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.ultra-stop-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #e7edf5;
+}
+
+.ultra-stop-summary:last-child {
+  border-bottom: none;
+}
+
+.ultra-stop-summary.active {
+  background: #f8fbff;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.small-muted {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+#prev-stop-btn:disabled,
+#next-stop-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .ultra-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .ultra-nav-buttons {
+    grid-template-columns: 1fr 1fr;
+  }
+}
