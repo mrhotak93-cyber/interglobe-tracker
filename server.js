@@ -62,7 +62,16 @@ const upload = multer({
 });
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const brussels = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Brussels',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(now);
+
+  return brussels;
+}
 }
 
 function nowIso() {
@@ -77,7 +86,15 @@ function formatDateTime(value) {
   if (!value) return '';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString('fr-BE');
+
+  return d.toLocaleString('fr-BE', {
+    timeZone: 'Europe/Brussels',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
 }
 
 function sanitizeFileName(name = 'photo.jpg') {
