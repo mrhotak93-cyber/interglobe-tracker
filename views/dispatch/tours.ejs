@@ -137,6 +137,16 @@
               <div class="inline-actions">
                 <a class="btn small" href="/dispatch/tours/<%= tour.id %>">Détail</a>
                 <a class="btn small" href="/dispatch/tours/<%= tour.id %>/edit">Modifier</a>
+		<% if (tour.status === 'completed') { %>
+  <form
+    action="/dispatch/tours/<%= tour.id %>/archive"
+    method="POST"
+    style="display:inline;"
+    onsubmit="return confirm('Archiver cette tournée ?');"
+  >
+    <button class="btn small" type="submit">Archiver</button>
+  </form>
+<% } %>
                 <form
                   action="/dispatch/tours/<%= tour.id %>/delete"
                   method="POST"

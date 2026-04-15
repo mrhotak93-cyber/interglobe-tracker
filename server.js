@@ -235,11 +235,17 @@ function normalizeStop(row) {
 
 async function fetchTours(where = {}, options = {}) {
   const limit = options.limit || null;
+  const includeArchived = Boolean(options.includeArchived);
+
   let query = admin
     .from('tours')
     .select('*')
     .order('tour_date', { ascending: false })
     .order('created_at', { ascending: false });
+
+  if (!includeArchived) {
+    query = query.eq('is_archived', false);
+  }
 
   Object.entries(where).forEach(([key, value]) => {
     if (Array.isArray(value)) query = query.in(key, value);
@@ -1013,6 +1019,35 @@ app.post('/dispatch/tours/:id/delete', requireRole('dispatch'), async (req, res)
   } catch (error) {
     console.error(error);
     flash(req, `Erreur suppression tournée : ${error.message}`);
+    res.redirect('/dispatch/tours');
+  }
+});
+
+app.post('/dispatch/tours/:id/archive', requireRole('dispatch'), async (req, res) => {
+  try {
+    const { data: tour, error: fetchError } = await admin
+      .from('tours')
+      .select('id, status')
+      .eq('id', req.params.id)
+      .single();
+    if (fetchError) throw fetchError;
+
+    if (tour.status !== 'completed') {
+      flash(req, 'Seules les tournées terminées peuvent être archivées.');
+      return res.redirect('/dispatch/tours');
+    }
+
+    const { error } = await admin
+      .from('tours')
+      .update({ is_archived: true })
+      .eq('id', req.params.id);
+    if (error) throw error;
+
+    flash(req, 'Tournée archivée.');
+    res.redirect('/dispatch/tours');
+  } catch (error) {
+    console.error(error);
+    flash(req, 'Erreur archivage tournée.');
     res.redirect('/dispatch/tours');
   }
 });
