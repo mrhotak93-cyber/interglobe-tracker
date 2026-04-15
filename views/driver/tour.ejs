@@ -9,18 +9,22 @@
   </div>
 </section>
 
-<section class="grid cols-3">
+<section class="grid cols-4">
   <article class="card stat-card">
     <div class="stat-label">Statut</div>
-    <div class="stat-value badge <%= tour.status %>"><%= tour.status %></div>
+    <div class="stat-value badge <%= tour.status %>" id="tourStatus"><%= tour.status %></div>
   </article>
   <article class="card stat-card">
     <div class="stat-label">Progression</div>
-    <div class="stat-value"><%= completedStops %>/<%= totalStops %></div>
+    <div class="stat-value" id="tourProgress"><%= completedStops %>/<%= totalStops %></div>
   </article>
   <article class="card stat-card">
     <div class="stat-label">Km</div>
-    <div class="stat-value"><%= tour.km_total || 0 %></div>
+    <div class="stat-value"><span id="tourKm"><%= tour.km_total || 0 %></span></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">GPS</div>
+    <div class="stat-value small-value" id="gpsStatus">En attente…</div>
   </article>
 </section>
 
@@ -42,7 +46,7 @@
 <% } %>
 
 <% if (tour.status !== 'assigned' && currentStop) { %>
-  <section class="card top-gap">
+  <section class="card top-gap" data-current-stop-id="<%= currentStop.id %>">
     <div class="section-header">
       <div>
         <div class="stop-seq">
@@ -52,7 +56,7 @@
         <h2><%= currentStop.name %></h2>
         <div class="muted"><%= currentStop.address %></div>
       </div>
-      <span class="badge <%= currentStop.status %>"><%= currentStop.status %></span>
+      <span class="badge <%= currentStop.status %>" id="currentStopStatus"><%= currentStop.status %></span>
     </div>
 
     <div class="stack top-gap">
@@ -68,9 +72,9 @@
         <div><strong>Téléphone :</strong> <%= currentStop.contact_phone %></div>
       <% } %>
 
-      <div><strong>Arrivée :</strong> <%= formatDateTime(currentStop.arrived_at) || '-' %></div>
-      <div><strong>Départ :</strong> <%= formatDateTime(currentStop.departed_at) || '-' %></div>
-      <div><strong>Preuves :</strong> <%= currentStop.proof_count || 0 %></div>
+      <div><strong>Arrivée :</strong> <span id="currentStopArrived"><%= formatDateTime(currentStop.arrived_at) || '-' %></span></div>
+      <div><strong>Départ :</strong> <span id="currentStopDeparted"><%= formatDateTime(currentStop.departed_at) || '-' %></span></div>
+      <div><strong>Preuves :</strong> <span id="currentStopProofCount"><%= currentStop.proof_count || 0 %></span></div>
     </div>
 
     <div class="inline-actions top-gap">
@@ -88,7 +92,7 @@
     </div>
 
     <% if (currentStop.status === 'pending') { %>
-      <div class="form-actions top-gap">
+      <div class="form-actions top-gap" id="arriveBlock">
         <form action="/driver/stops/<%= currentStop.id %>/arrive" method="POST" class="inline-form">
           <button class="btn primary" type="submit">Je suis arrivé</button>
         </form>
@@ -96,7 +100,7 @@
     <% } %>
 
     <% if (currentStop.status === 'arrived') { %>
-      <section class="card top-gap">
+      <section class="card top-gap" id="proofBlock">
         <h3>Preuves de livraison</h3>
         <p class="muted">Ajoute au moins une photo avant de valider le départ.</p>
 
@@ -121,15 +125,17 @@
           </div>
         </form>
 
-        <% if (currentStop.proofs.length) { %>
-          <div class="proof-grid top-gap">
-            <% currentStop.proofs.forEach((proof) => { %>
-              <a href="<%= proof.image_path %>" target="_blank" class="proof-item">
-                <img src="<%= proof.image_path %>" alt="preuve" />
-              </a>
-            <% }) %>
-          </div>
-        <% } %>
+        <div id="currentProofGrid">
+          <% if (currentStop.proofs.length) { %>
+            <div class="proof-grid top-gap">
+              <% currentStop.proofs.forEach((proof) => { %>
+                <a href="<%= proof.image_path %>" target="_blank" class="proof-item">
+                  <img src="<%= proof.image_path %>" alt="preuve" />
+                </a>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
 
         <div class="form-actions top-gap">
           <form
@@ -168,9 +174,9 @@
 
 <section class="card top-gap">
   <h2>Vue globale de la tournée</h2>
-  <div class="stack">
+  <div class="stack" id="allStopsList">
     <% tour.stops.forEach((stop) => { %>
-      <article class="stop-card">
+      <article class="stop-card" data-stop-id="<%= stop.id %>">
         <div class="section-header">
           <div>
             <div class="stop-seq">
@@ -179,11 +185,173 @@
             <h3><%= stop.name %></h3>
             <div class="muted"><%= stop.address %></div>
           </div>
-          <span class="badge <%= stop.status %>"><%= stop.status %></span>
+          <span class="badge <%= stop.status %>" data-stop-status><%= stop.status %></span>
         </div>
       </article>
     <% }) %>
   </div>
 </section>
+
+<script>
+  (function () {
+    const tourId = <%- JSON.stringify(tour.id) %>;
+    const gpsStatusEl = document.getElementById('gpsStatus');
+    let watchId = null;
+    let lastSentAt = 0;
+    let lastLat = null;
+    let lastLng = null;
+
+    function setGpsStatus(text) {
+      if (gpsStatusEl) gpsStatusEl.textContent = text;
+    }
+
+    async function sendLocation(latitude, longitude, accuracy) {
+      try {
+        const now = Date.now();
+
+        const movedEnough =
+          lastLat == null ||
+          lastLng == null ||
+          Math.abs(latitude - lastLat) > 0.0001 ||
+          Math.abs(longitude - lastLng) > 0.0001;
+
+        const enoughTimePassed = now - lastSentAt > 15000;
+
+        if (!movedEnough && !enoughTimePassed) return;
+
+        const res = await fetch(`/driver/tours/${tourId}/location`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            latitude,
+            longitude,
+            accuracy
+          })
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          setGpsStatus('Erreur envoi GPS');
+          return;
+        }
+
+        lastSentAt = now;
+        lastLat = latitude;
+        lastLng = longitude;
+
+        if (document.getElementById('tourKm') && typeof data.km !== 'undefined') {
+          document.getElementById('tourKm').textContent = data.km;
+        }
+
+        setGpsStatus('GPS actif');
+      } catch (error) {
+        console.error(error);
+        setGpsStatus('Erreur envoi GPS');
+      }
+    }
+
+    function startGpsTracking() {
+      if (!navigator.geolocation) {
+        setGpsStatus('GPS non supporté');
+        return;
+      }
+
+      setGpsStatus('Activation GPS…');
+
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          setGpsStatus('Position reçue');
+          sendLocation(latitude, longitude, accuracy);
+        },
+        (error) => {
+          console.error(error);
+          if (error.code === 1) setGpsStatus('Permission GPS refusée');
+          else if (error.code === 2) setGpsStatus('Position indisponible');
+          else if (error.code === 3) setGpsStatus('Timeout GPS');
+          else setGpsStatus('Erreur GPS');
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 10000,
+          timeout: 20000
+        }
+      );
+    }
+
+    function toLocal(iso) {
+      if (!iso) return '-';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleString('fr-BE');
+    }
+
+    async function refreshStatus() {
+      try {
+        const res = await fetch(`/api/tours/${tourId}/status`);
+        const data = await res.json();
+        if (!data.ok) return;
+
+        const tour = data.tour;
+        const currentStop =
+          (tour.stops || []).find((stop) => stop.status === 'arrived') ||
+          (tour.stops || []).find((stop) => stop.status === 'pending') ||
+          null;
+
+        if (document.getElementById('tourStatus')) {
+          document.getElementById('tourStatus').textContent = tour.status;
+          document.getElementById('tourStatus').className = `stat-value badge ${tour.status}`;
+        }
+
+        if (document.getElementById('tourKm')) {
+          document.getElementById('tourKm').textContent = tour.km_total || 0;
+        }
+
+        if (document.getElementById('tourProgress')) {
+          const done = (tour.stops || []).filter((stop) => stop.status === 'done').length;
+          document.getElementById('tourProgress').textContent = `${done}/${(tour.stops || []).length}`;
+        }
+
+        (tour.stops || []).forEach((stop) => {
+          const root = document.querySelector(`[data-stop-id="${stop.id}"]`);
+          if (!root) return;
+          const statusEl = root.querySelector('[data-stop-status]');
+          if (statusEl) {
+            statusEl.textContent = stop.status;
+            statusEl.className = `badge ${stop.status}`;
+          }
+        });
+
+        if (currentStop) {
+          const currentStatusEl = document.getElementById('currentStopStatus');
+          const currentArrivedEl = document.getElementById('currentStopArrived');
+          const currentDepartedEl = document.getElementById('currentStopDeparted');
+          const currentProofCountEl = document.getElementById('currentStopProofCount');
+
+          if (currentStatusEl) {
+            currentStatusEl.textContent = currentStop.status;
+            currentStatusEl.className = `badge ${currentStop.status}`;
+          }
+          if (currentArrivedEl) currentArrivedEl.textContent = toLocal(currentStop.arrived_at);
+          if (currentDepartedEl) currentDepartedEl.textContent = toLocal(currentStop.departed_at);
+          if (currentProofCountEl) currentProofCountEl.textContent = currentStop.proof_count || 0;
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    startGpsTracking();
+    setInterval(refreshStatus, 10000);
+
+    window.addEventListener('beforeunload', function () {
+      if (watchId != null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    });
+  })();
+</script>
 
 <%- include('../partials/footer') %>
