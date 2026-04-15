@@ -1,416 +1,144 @@
 <%- include('../partials/header', { title, user }) %>
 
-<%
-  const allStops = tour.stops || [];
-  const activeStops = allStops.filter((s) => s.status !== 'done');
-  const completedStops = allStops.filter((s) => s.status === 'done');
-
-  let currentIndex = 0;
-  if (!activeStops.length) currentIndex = -1;
-
-  function buildStopAddress(stop) {
-    return (
-      (stop &&
-        (stop.address ||
-          [
-            [stop.street, stop.street_no || stop.street_number].filter(Boolean).join(' '),
-            [stop.postal_code, stop.city].filter(Boolean).join(' ')
-          ]
-            .filter(Boolean)
-            .join(', '))) ||
-      ''
-    );
-  }
-
-  function encodeAddress(stop) {
-    return encodeURIComponent(buildStopAddress(stop));
-  }
-
-  function hasCoords(stop) {
-    return !!(stop && stop.latitude && stop.longitude);
-  }
-
-  function wazeLink(stop) {
-    if (!stop) return '#';
-    if (hasCoords(stop)) {
-      return `https://www.waze.com/ul?ll=${stop.latitude},${stop.longitude}&navigate=yes`;
-    }
-    const q = encodeAddress(stop);
-    return q ? `https://www.waze.com/ul?q=${q}&navigate=yes` : '#';
-  }
-
-  function googleMapsLink(stop) {
-    if (!stop) return '#';
-    if (hasCoords(stop)) {
-      return `https://www.google.com/maps?q=${stop.latitude},${stop.longitude}`;
-    }
-    const q = encodeAddress(stop);
-    return q ? `https://www.google.com/maps/search/?api=1&query=${q}` : '#';
-  }
-%>
-
-<div class="mobile-driver-shell ultra-driver-shell">
-  <section class="mobile-driver-topcard">
-    <div class="mobile-driver-head">
-      <div>
-        <h1 class="mobile-driver-title"><%= tour.reference %></h1>
-        <p class="mobile-driver-subtitle">
-          Client : <strong><%= tour.client_name || '-' %></strong>
-        </p>
-      </div>
-      <div>
-        <span class="badge <%= tour.status %>"><%= tour.status %></span>
-      </div>
-    </div>
-
-    <div class="mobile-driver-kpis">
-      <div class="mobile-driver-kpi">
-        <div class="mobile-driver-kpi-label">Début</div>
-        <div class="mobile-driver-kpi-value small-value">
-          <%= tour.started_at ? formatDateTime(tour.started_at) : '-' %>
-        </div>
-      </div>
-
-      <div class="mobile-driver-kpi">
-        <div class="mobile-driver-kpi-label">Fin</div>
-        <div class="mobile-driver-kpi-value small-value">
-          <%= tour.completed_at ? formatDateTime(tour.completed_at) : '-' %>
-        </div>
-      </div>
-
-      <div class="mobile-driver-kpi">
-        <div class="mobile-driver-kpi-label">Km</div>
-        <div class="mobile-driver-kpi-value"><%= tour.km_total || 0 %> km</div>
-      </div>
-
-      <div class="mobile-driver-kpi">
-        <div class="mobile-driver-kpi-label">Arrêts restants</div>
-        <div class="mobile-driver-kpi-value"><%= activeStops.length %></div>
-      </div>
-    </div>
-
-    <div class="mobile-driver-actions">
-      <form method="POST" action="/driver/tours/<%= tour.id %>/start">
-        <button type="submit" class="btn btn-success">Commencer</button>
-      </form>
-
-      <form
-        method="POST"
-        action="/driver/tours/<%= tour.id %>/complete"
-        onsubmit="return confirm('Terminer cette tournée ?');"
-      >
-        <button type="submit" class="btn btn-danger">Terminer</button>
-      </form>
-    </div>
-  </section>
-
-  <section class="mobile-driver-status">
-    <h2 class="mobile-driver-stop-title">Tracking GPS</h2>
-    <div id="gps-status" class="mobile-driver-gps-box">Initialisation GPS…</div>
-  </section>
-
-  <% if (activeStops.length) { %>
-    <section class="mobile-driver-stop mobile-driver-current ultra-current-stop">
-      <div class="mobile-driver-stop-badge">Arrêt actif</div>
-
-      <div class="ultra-progress">
-        Arrêt <span id="current-stop-number"><%= currentIndex + 1 %></span> / <%= activeStops.length %>
-      </div>
-
-      <% activeStops.forEach((stop, index) => { %>
-        <div
-          class="ultra-stop-slide <%= index === currentIndex ? 'is-active' : '' %>"
-          data-stop-index="<%= index %>"
-        >
-          <h2 class="mobile-driver-stop-title">
-            #<%= stop.sequence_no || (index + 1) %> · <%= stop.stop_type %>
-          </h2>
-
-          <p class="mobile-driver-main-name"><strong><%= stop.name %></strong></p>
-          <p class="mobile-driver-line"><%= buildStopAddress(stop) || '-' %></p>
-
-          <% if (stop.instructions) { %>
-            <p class="mobile-driver-line">
-              <strong>Instructions :</strong> <%= stop.instructions %>
-            </p>
-          <% } %>
-
-          <p class="mobile-driver-line">
-            <strong>Statut :</strong>
-            <span class="badge <%= stop.status %>"><%= stop.status %></span>
-          </p>
-
-          <p class="mobile-driver-line">
-            <strong>Arrivé :</strong>
-            <%= stop.arrived_at ? formatDateTime(stop.arrived_at) : '-' %>
-          </p>
-
-          <p class="mobile-driver-line">
-            <strong>Départ :</strong>
-            <%= stop.departed_at ? formatDateTime(stop.departed_at) : '-' %>
-          </p>
-
-          <p class="mobile-driver-line">
-            <strong>Contact :</strong>
-            <%= stop.contact_name || '-' %>
-            <%= stop.contact_phone ? ' - ' + stop.contact_phone : '' %>
-          </p>
-
-          <div class="mobile-driver-actions ultra-actions">
-            <% if (wazeLink(stop) !== '#') { %>
-              <a
-                class="btn btn-waze"
-                target="_blank"
-                rel="noopener noreferrer"
-                href="<%= wazeLink(stop) %>"
-              >
-                Waze
-              </a>
-            <% } else { %>
-              <button type="button" class="btn btn-muted" disabled>Waze</button>
-            <% } %>
-
-            <% if (googleMapsLink(stop) !== '#') { %>
-              <a
-                class="btn btn-maps"
-                target="_blank"
-                rel="noopener noreferrer"
-                href="<%= googleMapsLink(stop) %>"
-              >
-                Maps
-              </a>
-            <% } else { %>
-              <button type="button" class="btn btn-muted" disabled>Maps</button>
-            <% } %>
-
-            <% if (stop.contact_phone) { %>
-              <a class="btn btn-call" href="tel:<%= stop.contact_phone %>">Appeler</a>
-            <% } else { %>
-              <button type="button" class="btn btn-muted" disabled>Appeler</button>
-            <% } %>
-
-            <form method="POST" action="/driver/stops/<%= stop.id %>/arrive">
-              <button type="submit" class="btn btn-success">Arrivé</button>
-            </form>
-
-            <form method="POST" action="/driver/stops/<%= stop.id %>/depart">
-              <button type="submit" class="btn">Départ</button>
-            </form>
-          </div>
-
-          <div class="mobile-driver-proof">
-            <h3>Preuve de livraison</h3>
-
-            <form
-              method="POST"
-              action="/driver/stops/<%= stop.id %>/proofs"
-              enctype="multipart/form-data"
-            >
-              <input
-                type="file"
-                name="photos"
-                multiple
-                accept="image/*"
-                capture="environment"
-              />
-              <textarea name="note" placeholder="Note optionnelle"></textarea>
-              <button type="submit" class="btn primary">Envoyer les preuves</button>
-            </form>
-          </div>
-        </div>
-      <% }) %>
-
-      <div class="ultra-nav-buttons">
-        <button type="button" class="btn btn-muted" id="prev-stop-btn">Arrêt précédent</button>
-        <button type="button" class="btn primary" id="next-stop-btn">Arrêt suivant</button>
-      </div>
-    </section>
-  <% } else { %>
-    <section class="mobile-driver-stop mobile-driver-current ultra-current-stop">
-      <div class="mobile-driver-stop-badge">Tournée terminée</div>
-      <h2 class="mobile-driver-stop-title">Plus aucun arrêt actif</h2>
-      <p class="mobile-driver-line">
-        Tous les arrêts sont terminés. Tu peux clôturer la tournée.
-      </p>
-
-      <div class="mobile-driver-actions">
-        <form
-          method="POST"
-          action="/driver/tours/<%= tour.id %>/complete"
-          onsubmit="return confirm('Terminer cette tournée ?');"
-        >
-          <button type="submit" class="btn btn-danger">Terminer la tournée</button>
-        </form>
-      </div>
-    </section>
-  <% } %>
-
-  <% if (activeStops.length) { %>
-    <section class="mobile-driver-stop-list" id="remaining-stops-list">
-      <div class="section-header">
-        <h2>Arrêts restants</h2>
-      </div>
-
-      <% activeStops.forEach((stop, index) => { %>
-        <div class="ultra-stop-summary <%= index === currentIndex ? 'active' : '' %>">
-          <div>
-            <strong>#<%= stop.sequence_no || (index + 1) %> - <%= stop.name %></strong>
-            <div class="small-muted"><%= buildStopAddress(stop) || '-' %></div>
-          </div>
-          <div>
-            <span class="badge <%= stop.status %>"><%= stop.status %></span>
-          </div>
-        </div>
-      <% }) %>
-    </section>
-  <% } %>
-
-  <% if (completedStops.length) { %>
-    <section class="mobile-driver-stop-list">
-      <div class="section-header">
-        <h2>Arrêts terminés</h2>
-      </div>
-
-      <% completedStops.forEach((stop) => { %>
-        <div class="ultra-stop-summary completed">
-          <div>
-            <strong>#<%= stop.sequence_no || '-' %> - <%= stop.name %></strong>
-            <div class="small-muted"><%= buildStopAddress(stop) || '-' %></div>
-          </div>
-          <div>
-            <span class="badge done">done</span>
-          </div>
-        </div>
-      <% }) %>
-    </section>
-  <% } %>
-
-  <div class="mobile-driver-nav">
-    <div class="mobile-driver-nav-grid">
-      <form method="POST" action="/driver/tours/<%= tour.id %>/start">
-        <button type="submit" class="btn btn-success">Commencer</button>
-      </form>
-
-      <form
-        method="POST"
-        action="/driver/tours/<%= tour.id %>/complete"
-        onsubmit="return confirm('Terminer cette tournée ?');"
-      >
-        <button type="submit" class="btn btn-danger">Terminer</button>
-      </form>
-    </div>
+<section class="hero">
+  <div>
+    <h1><%= tour.reference %></h1>
+    <p class="muted">Suivi en direct de la tournée.</p>
   </div>
-</div>
+  <div class="actions">
+    <% if (tour.latestLocation) { %>
+      <a class="btn primary" target="_blank" href="https://www.google.com/maps?q=<%= tour.latestLocation.latitude %>,<%= tour.latestLocation.longitude %>">Voir le chauffeur sur la carte</a>
+    <% } %>
+  </div>
+</section>
+
+<section class="grid cols-4">
+  <article class="card stat-card">
+    <div class="stat-label">Statut</div>
+    <div class="stat-value badge <%= tour.status %>" id="tourStatus"><%= tour.status %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Début</div>
+    <div class="stat-value small-value" id="tourStart"><%= formatDateTime(tour.started_at) || '-' %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Fin</div>
+    <div class="stat-value small-value" id="tourEnd"><%= formatDateTime(tour.completed_at) || '-' %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Km parcourus</div>
+    <div class="stat-value"><span id="tourKm"><%= tour.km_total || 0 %></span> km</div>
+  </article>
+</section>
+
+<section class="card top-gap">
+  <h2>Position actuelle du chauffeur</h2>
+  <div id="locationBox" class="location-box">
+    <% if (tour.latestLocation) { %>
+      <div>Latitude : <span id="locLat"><%= tour.latestLocation.latitude %></span></div>
+      <div>Longitude : <span id="locLng"><%= tour.latestLocation.longitude %></span></div>
+      <div>Dernière mise à jour : <span id="locAt"><%= formatDateTime(tour.latestLocation.created_at) %></span></div>
+      <div class="top-gap">
+        <a id="mapsLink" class="btn small" target="_blank" href="https://www.google.com/maps?q=<%= tour.latestLocation.latitude %>,<%= tour.latestLocation.longitude %>">Ouvrir la position</a>
+      </div>
+    <% } else { %>
+      <div id="noLocation">Aucune position GPS reçue pour le moment.</div>
+      <a id="mapsLink" class="btn small hidden" target="_blank" href="#">Ouvrir la position</a>
+    <% } %>
+  </div>
+</section>
+
+<section class="card top-gap">
+  <h2>Rapport de tournée</h2>
+  <p class="muted">
+    Quand la tournée est terminée, cette page affiche le mini rapport final :
+    heure de début, heure de fin et nombre de kilomètres parcourus.
+  </p>
+</section>
+
+<section class="stack top-gap">
+  <% tour.stops.forEach((stop) => { %>
+    <article class="stop-card" data-stop-id="<%= stop.id %>">
+      <div class="section-header">
+        <div>
+          <div class="stop-seq">#<%= stop.sequence_no %> · <%= stop.stop_type === 'loading' ? 'Chargement' : 'Déchargement' %></div>
+          <h3><%= stop.name %></h3>
+          <div class="muted"><%= stop.address %></div>
+        </div>
+        <span class="badge <%= stop.status %>" data-stop-status><%= stop.status %></span>
+      </div>
+
+      <div class="grid cols-2 compact">
+        <div><strong>Heure arrivée :</strong> <span data-stop-arrived><%= formatDateTime(stop.arrived_at) || '-' %></span></div>
+        <div><strong>Heure départ :</strong> <span data-stop-departed><%= formatDateTime(stop.departed_at) || '-' %></span></div>
+      </div>
+
+      <% if (stop.proofs.length) { %>
+        <div class="proof-grid top-gap">
+          <% stop.proofs.forEach((proof) => { %>
+            <a href="<%= proof.image_path %>" target="_blank" class="proof-item">
+              <img src="<%= proof.image_path %>" alt="preuve" />
+            </a>
+          <% }) %>
+        </div>
+      <% } %>
+    </article>
+  <% }) %>
+</section>
 
 <script>
   (function () {
-    const gpsStatus = document.getElementById('gps-status');
-    const tourId = "<%= tour.id %>";
-    let watchId = null;
+    const tourId = <%- JSON.stringify(tour.id) %>;
 
-    function updateStatus(text) {
-      if (gpsStatus) gpsStatus.textContent = text;
+    function toLocal(iso) {
+      if (!iso) return '-';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleString('fr-BE');
     }
 
-    async function sendPosition(position) {
+    async function refreshStatus() {
       try {
-        const res = await fetch(`/driver/tours/${tourId}/location`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy
-          })
-        });
-
+        const res = await fetch(`/api/tours/${tourId}/status`);
         const data = await res.json();
-        if (data.ok) {
-          updateStatus(`GPS actif · ${data.km} km`);
-        } else {
-          updateStatus('Erreur GPS');
+        if (!data.ok) return;
+
+        document.getElementById('tourStatus').textContent = data.tour.status;
+        document.getElementById('tourStart').textContent = toLocal(data.tour.started_at);
+        document.getElementById('tourEnd').textContent = toLocal(data.tour.completed_at);
+        document.getElementById('tourKm').textContent = data.tour.km_total;
+
+        if (data.tour.latestLocation) {
+          const loc = data.tour.latestLocation;
+          const noLocation = document.getElementById('noLocation');
+          if (noLocation) noLocation.remove();
+          document.getElementById('locationBox').innerHTML = `
+            <div>Latitude : <span id="locLat">${loc.latitude}</span></div>
+            <div>Longitude : <span id="locLng">${loc.longitude}</span></div>
+            <div>Dernière mise à jour : <span id="locAt">${toLocal(loc.created_at)}</span></div>
+            <div class="top-gap">
+              <a id="mapsLink" class="btn small" target="_blank" href="${loc.maps_link}">Ouvrir la position</a>
+            </div>
+          `;
         }
-      } catch (err) {
-        updateStatus('Envoi GPS impossible');
+
+        data.tour.stops.forEach((stop) => {
+          const root = document.querySelector(`[data-stop-id="${stop.id}"]`);
+          if (!root) return;
+          const statusEl = root.querySelector('[data-stop-status]');
+          const arrivedEl = root.querySelector('[data-stop-arrived]');
+          const departedEl = root.querySelector('[data-stop-departed]');
+          statusEl.textContent = stop.status;
+          statusEl.className = `badge ${stop.status}`;
+          arrivedEl.textContent = toLocal(stop.arrived_at);
+          departedEl.textContent = toLocal(stop.departed_at);
+        });
+      } catch (error) {
+        console.error(error);
       }
     }
 
-    function startGps() {
-      if (!navigator.geolocation) {
-        updateStatus('Géolocalisation non supportée');
-        return;
-      }
-
-      watchId = navigator.geolocation.watchPosition(
-        sendPosition,
-        function () {
-          updateStatus('Autorisation GPS refusée ou indisponible');
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 5000,
-          timeout: 10000
-        }
-      );
-    }
-
-    startGps();
-
-    window.addEventListener('beforeunload', function () {
-      if (watchId !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-    });
-  })();
-
-  (function () {
-    const slides = Array.from(document.querySelectorAll('.ultra-stop-slide'));
-    const prevBtn = document.getElementById('prev-stop-btn');
-    const nextBtn = document.getElementById('next-stop-btn');
-    const currentStopNumber = document.getElementById('current-stop-number');
-    const summaries = Array.from(
-      document.querySelectorAll('#remaining-stops-list .ultra-stop-summary')
-    );
-
-    if (!slides.length || !prevBtn || !nextBtn) return;
-
-    let currentIndex = slides.findIndex((el) => el.classList.contains('is-active'));
-    if (currentIndex < 0) currentIndex = 0;
-
-    function renderSlide() {
-      slides.forEach((slide, index) => {
-        slide.classList.toggle('is-active', index === currentIndex);
-      });
-
-      summaries.forEach((row, index) => {
-        row.classList.toggle('active', index === currentIndex);
-      });
-
-      if (currentStopNumber) {
-        currentStopNumber.textContent = currentIndex + 1;
-      }
-
-      prevBtn.disabled = currentIndex === 0;
-      nextBtn.disabled = currentIndex === slides.length - 1;
-    }
-
-    prevBtn.addEventListener('click', function () {
-      if (currentIndex > 0) {
-        currentIndex -= 1;
-        renderSlide();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    });
-
-    nextBtn.addEventListener('click', function () {
-      if (currentIndex < slides.length - 1) {
-        currentIndex += 1;
-        renderSlide();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    });
-
-    renderSlide();
+    setInterval(refreshStatus, 10000);
   })();
 </script>
 

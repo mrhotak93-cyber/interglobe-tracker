@@ -2,12 +2,12 @@
 
 <section class="hero">
   <div>
-    <h1>Tableau de bord dispatch</h1>
-    <p class="muted">Pilotage simple des comptes, tournées et récurrences.</p>
+    <h1>Tableau de bord dispatch V3</h1>
+    <p class="muted">Vue opérationnelle avec alertes GPS, arrêts bloqués et suivi des tournées du jour.</p>
   </div>
   <div class="actions">
-    <a class="btn primary" href="/dispatch/tours">Créer / gérer les tournées</a>
-    <a class="btn" href="/dispatch/users">Gérer les comptes</a>
+    <a class="btn primary" href="/dispatch/tours">Gérer les tournées</a>
+    <a class="btn" href="/dispatch/tours/export.csv">Exporter CSV</a>
   </div>
 </section>
 
@@ -25,12 +25,100 @@
     <div class="stat-value"><%= counts.activeTours %></div>
   </article>
   <article class="card stat-card">
-    <div class="stat-label">Récurrences actives</div>
-    <div class="stat-value"><%= counts.recurrences %></div>
+    <div class="stat-label">Terminées aujourd'hui</div>
+    <div class="stat-value"><%= counts.completedToday %></div>
   </article>
 </section>
 
-<section class="card">
+<section class="grid cols-4 top-gap">
+  <article class="card stat-card">
+    <div class="stat-label">Sans chauffeur</div>
+    <div class="stat-value"><%= counts.noDriverToday %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Alertes</div>
+    <div class="stat-value"><%= counts.alerts %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Preuves actives</div>
+    <div class="stat-value"><%= counts.proofsActiveTours %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Contrôle GPS</div>
+    <div class="stat-value"><%= counts.activeTours ? 'OK / À vérifier' : '-' %></div>
+  </article>
+</section>
+
+<section class="split top-gap">
+  <article class="card">
+    <div class="section-header">
+      <h2>Alertes opérationnelles</h2>
+      <span class="badge <%= alerts.length ? 'warning' : 'assigned' %>"><%= alerts.length ? alerts.length + ' active(s)' : 'aucune' %></span>
+    </div>
+
+    <% if (!alerts.length) { %>
+      <p class="muted">Aucune anomalie critique détectée sur les tournées en cours.</p>
+    <% } %>
+
+    <div class="stack">
+      <% alerts.forEach((alert) => { %>
+        <article class="stop-card">
+          <div class="section-header">
+            <div>
+              <h3><%= alert.title %></h3>
+              <div class="muted"><%= alert.text %></div>
+            </div>
+            <span class="badge <%= alert.level %>"><%= alert.level %></span>
+          </div>
+          <div class="inline-actions">
+            <a class="btn small" href="<%= alert.href %>">Ouvrir</a>
+          </div>
+        </article>
+      <% }) %>
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="section-header">
+      <h2>Tournées actives surveillées</h2>
+      <a class="btn small" href="/dispatch/tours?status=in_progress">Voir toutes</a>
+    </div>
+
+    <% if (!activeTourDetails.length) { %>
+      <p class="muted">Aucune tournée en cours actuellement.</p>
+    <% } %>
+
+    <div class="stack">
+      <% activeTourDetails.forEach((tour) => { %>
+        <article class="stop-card">
+          <div class="section-header">
+            <div>
+              <h3><%= tour.reference %></h3>
+              <div class="muted"><%= tour.driver_name || '-' %> · <%= tour.client_name || '-' %></div>
+            </div>
+            <span class="badge <%= tour.status %>"><%= tour.status %></span>
+          </div>
+
+          <div class="grid cols-2 compact">
+            <div><strong>Arrêts :</strong> <%= tour.metrics.doneStops %>/<%= tour.metrics.totalStops %></div>
+            <div><strong>Km :</strong> <%= tour.km_total || 0 %></div>
+            <div><strong>GPS :</strong> <%= tour.monitoring.gpsLastSeenMinutes == null ? 'jamais reçu' : 'il y a ' + tour.monitoring.gpsLastSeenMinutes + ' min' %></div>
+            <div><strong>Preuves :</strong> <%= tour.metrics.proofCount %></div>
+          </div>
+
+          <div class="inline-actions top-gap">
+            <a class="btn small" href="/dispatch/tours/<%= tour.id %>">Détail</a>
+            <% if (tour.latestLocation) { %>
+              <a class="btn small" target="_blank" href="<%= tour.latestLocation.maps_link %>">Voir position</a>
+            <% } %>
+          </div>
+        </article>
+      <% }) %>
+    </div>
+  </article>
+</section>
+
+<section class="card top-gap">
   <div class="section-header">
     <h2>Dernières tournées</h2>
     <a class="btn" href="/dispatch/tours">Voir tout</a>

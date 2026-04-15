@@ -9,15 +9,31 @@
   </div>
   <div class="actions">
     <a class="btn" href="/dispatch/tours/<%= tour.id %>/edit">Modifier tournée</a>
+    <a class="btn" href="/dispatch/tours/<%= tour.id %>/export.csv">Exporter arrêts CSV</a>
     <a class="btn" href="/dispatch/recurrences">Créer / gérer les récurrences</a>
   </div>
 </section>
 
-<section class="grid cols-3">
+<section class="grid cols-4">
   <article class="card stat-card">
     <div class="stat-label">Statut</div>
     <div class="stat-value badge <%= tour.status %>"><%= tour.status %></div>
   </article>
+  <article class="card stat-card">
+    <div class="stat-label">Avancement</div>
+    <div class="stat-value small-value"><%= tour.metrics.doneStops %>/<%= tour.metrics.totalStops %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Preuves</div>
+    <div class="stat-value"><%= tour.metrics.proofCount %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Km</div>
+    <div class="stat-value"><%= tour.km_total || 0 %></div>
+  </article>
+</section>
+
+<section class="grid cols-3 top-gap">
   <article class="card stat-card">
     <div class="stat-label">Début</div>
     <div class="stat-value small-value"><%= formatDateTime(tour.started_at) || '-' %></div>
@@ -25,6 +41,10 @@
   <article class="card stat-card">
     <div class="stat-label">Fin</div>
     <div class="stat-value small-value"><%= formatDateTime(tour.completed_at) || '-' %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">GPS</div>
+    <div class="stat-value small-value"><%= tour.latestLocation ? 'il y a ' + tour.latestLocation.minutes_since + ' min' : 'jamais reçu' %></div>
   </article>
 </section>
 
@@ -82,36 +102,18 @@
   </article>
 
   <article class="card">
-    <h2>Créer une récurrence depuis cette tournée</h2>
-    <form action="/dispatch/recurrences" method="POST" class="grid cols-2">
-      <input type="hidden" name="source_tour_id" value="<%= tour.id %>" />
-      <label>
-        <span>Nom de la récurrence</span>
-        <input name="name" value="Récurrence <%= tour.reference %>" required />
-      </label>
-      <label>
-        <span>Fréquence</span>
-        <select name="frequency" required>
-          <option value="daily">Tous les jours</option>
-          <option value="weekly">Hebdomadaire</option>
-        </select>
-      </label>
-      <label class="full">
-        <span>Jours (si hebdomadaire)</span>
-        <input name="weekdays" placeholder="mon,tue,wed,thu,fri" />
-      </label>
-      <label>
-        <span>Date début</span>
-        <input type="date" name="start_date" value="<%= tour.date %>" required />
-      </label>
-      <label>
-        <span>Date fin</span>
-        <input type="date" name="end_date" />
-      </label>
-      <div class="form-actions">
-        <button class="btn" type="submit">Créer la récurrence</button>
-      </div>
-    </form>
+    <h2>Monitoring terrain</h2>
+    <div class="stack">
+      <div><strong>Chauffeur :</strong> <%= tour.driver_name || '-' %></div>
+      <div><strong>Téléphone :</strong> <%= tour.driver_phone || '-' %></div>
+      <div><strong>Dernier GPS :</strong> <%= tour.latestLocation ? formatDateTime(tour.latestLocation.created_at) : 'jamais reçu' %></div>
+      <div><strong>Arrêts en retard :</strong> <%= tour.metrics.overdueStops %></div>
+      <% if (tour.latestLocation) { %>
+        <div class="inline-actions top-gap">
+          <a class="btn small" target="_blank" href="<%= tour.latestLocation.maps_link %>">Voir la position</a>
+        </div>
+      <% } %>
+    </div>
   </article>
 </section>
 
@@ -119,7 +121,7 @@
   <div class="section-header">
     <h2>Arrêts de la tournée</h2>
     <% if (tour.latestLocation) { %>
-      <a class="btn small" target="_blank" href="https://www.google.com/maps?q=<%= tour.latestLocation.latitude %>,<%= tour.latestLocation.longitude %>">Voir dernière position</a>
+      <a class="btn small" target="_blank" href="<%= tour.latestLocation.maps_link %>">Voir dernière position</a>
     <% } %>
   </div>
 
@@ -137,6 +139,7 @@
             <div class="muted"><%= stop.address %></div>
           </div>
           <div class="inline-actions">
+            <span class="badge <%= stop.is_overdue ? 'warning' : stop.status %>"><%= stop.is_overdue ? 'overdue' : stop.status %></span>
             <a class="btn small" href="/dispatch/stops/<%= stop.id %>/edit">Modifier</a>
             <form action="/dispatch/stops/<%= stop.id %>/delete" method="POST" class="inline-form" onsubmit="return confirm('Supprimer cet arrêt ?')">
               <button class="btn small danger" type="submit">Supprimer</button>
@@ -147,7 +150,7 @@
         <div class="grid cols-3 compact">
           <div><strong>Arrivé :</strong> <%= formatDateTime(stop.arrived_at) || '-' %></div>
           <div><strong>Départ :</strong> <%= formatDateTime(stop.departed_at) || '-' %></div>
-          <div><strong>Statut :</strong> <span class="badge <%= stop.status %>"><%= stop.status %></span></div>
+          <div><strong>Preuves :</strong> <%= stop.proof_count || 0 %></div>
         </div>
 
         <% if (stop.instructions) { %>

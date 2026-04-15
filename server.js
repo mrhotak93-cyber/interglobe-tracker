@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 const cookieSession = require('cookie-session');
 const multer = require('multer');
+const { stringify } = require('csv-stringify/sync');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -16,6 +17,8 @@ const SUPABASE_PUBLISHABLE_KEY =
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'interglobe-session-secret-change-me';
 const PROOF_BUCKET = 'proof-photos';
+const DEFAULT_GPS_STALE_MINUTES = Number(process.env.GPS_STALE_MINUTES || 30);
+const STOP_OVERDUE_MINUTES = Number(process.env.STOP_OVERDUE_MINUTES || 90);
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !SUPABASE_SECRET_KEY) {
   console.warn(
@@ -74,6 +77,10 @@ function today() {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function nowBrusselsDate() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Brussels' }));
 }
 
 function flash(req, message) {
@@ -155,6 +162,13 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+function diffMinutesFromNow(isoDate) {
+  if (!isoDate) return null;
+  const value = new Date(isoDate);
+  if (Number.isNaN(value.getTime())) return null;
+  return Math.round((nowBrusselsDate().getTime() - value.getTime()) / 60000);
+}
+
 function ensureSupabaseConfigured(req, res, next) {
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !SUPABASE_SECRET_KEY) {
     return res.status(500).send('Configuration Supabase incomplète.');
@@ -180,16 +194,6 @@ async function fetchAllProfiles() {
   return data || [];
 }
 
-async function getProfileByAuthUserId(authUserId) {
-  const { data, error } = await admin
-    .from('profiles')
-    .select('*')
-    .eq('auth_user_id', authUserId)
-    .maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
 async function getProfileByUsername(username) {
   const { data, error } = await admin
     .from('profiles')
@@ -211,6 +215,7 @@ function normalizeTour(row, profilesMap) {
     driver_id: row.assigned_driver_profile_id,
     client_id: row.client_profile_id,
     driver_name: driver ? driver.full_name : null,
+    driver_phone: driver ? driver.phone : null,
     client_name: client ? client.full_name : null,
     started_at: row.started_at,
     completed_at: row.ended_at,
@@ -228,7 +233,8 @@ function normalizeStop(row) {
   };
 }
 
-async function fetchTours(where = {}) {
+async function fetchTours(where = {}, options = {}) {
+  const limit = options.limit || null;
   let query = admin
     .from('tours')
     .select('*')
@@ -237,8 +243,10 @@ async function fetchTours(where = {}) {
 
   Object.entries(where).forEach(([key, value]) => {
     if (Array.isArray(value)) query = query.in(key, value);
-    else query = query.eq(key, value);
+    else if (value !== undefined && value !== null && value !== '') query = query.eq(key, value);
   });
+
+  if (limit) query = query.limit(limit);
 
   const { data, error } = await query;
   if (error) throw error;
@@ -285,6 +293,8 @@ async function fetchTourById(tourId) {
 
   stops.forEach((stop) => {
     stop.proofs = proofsByStop[stop.id] || [];
+    stop.proof_count = stop.proofs.length;
+    stop.is_overdue = stop.status !== 'done' && diffMinutesFromNow(stop.arrived_at || tour.started_at) > STOP_OVERDUE_MINUTES;
   });
 
   const { data: latestLocation, error: locationError } = await admin
@@ -301,9 +311,24 @@ async function fetchTourById(tourId) {
     ? {
         ...latestLocation,
         created_at: latestLocation.tracked_at,
+        minutes_since: diffMinutesFromNow(latestLocation.tracked_at),
         maps_link: `https://www.google.com/maps?q=${latestLocation.latitude},${latestLocation.longitude}`
       }
     : null;
+
+  tour.metrics = {
+    totalStops: stops.length,
+    doneStops: stops.filter((s) => s.status === 'done').length,
+    pendingStops: stops.filter((s) => s.status === 'pending').length,
+    arrivedStops: stops.filter((s) => s.status === 'arrived').length,
+    proofCount: stops.reduce((sum, stop) => sum + (stop.proof_count || 0), 0),
+    overdueStops: stops.filter((s) => s.is_overdue).length
+  };
+
+  tour.monitoring = {
+    gpsStale: !tour.latestLocation || tour.latestLocation.minutes_since > DEFAULT_GPS_STALE_MINUTES,
+    gpsLastSeenMinutes: tour.latestLocation ? tour.latestLocation.minutes_since : null
+  };
 
   return tour;
 }
@@ -315,7 +340,9 @@ async function createClientReport(tourId) {
   const summaryText = [
     `Début : ${formatDateTime(tour.started_at) || '-'}`,
     `Fin : ${formatDateTime(tour.completed_at) || '-'}`,
-    `Km : ${tour.km_total || 0}`
+    `Km : ${tour.km_total || 0}`,
+    `Arrêts terminés : ${tour.metrics.doneStops}/${tour.metrics.totalStops}`,
+    `Preuves : ${tour.metrics.proofCount}`
   ].join(' | ');
 
   const payload = {
@@ -521,6 +548,59 @@ async function generateToursFromTemplate(templateId, rangeStart, rangeEnd, creat
   return createdCount;
 }
 
+async function buildDispatchDashboard() {
+  const profiles = await fetchAllProfiles();
+  const tours = await fetchTours();
+  const todayStr = today();
+  const toursToday = tours.filter((item) => item.date === todayStr);
+  const activeTours = tours.filter((item) => item.status === 'in_progress');
+  const completedToday = tours.filter((item) => item.date === todayStr && item.status === 'completed');
+
+  const activeTourDetails = await Promise.all(activeTours.map((tour) => fetchTourById(tour.id)));
+
+  const alerts = [];
+  for (const tour of activeTourDetails) {
+    if (!tour) continue;
+    if (tour.monitoring.gpsStale) {
+      alerts.push({
+        level: 'danger',
+        title: 'GPS inactif ou trop ancien',
+        text: `${tour.reference} · ${tour.driver_name || 'chauffeur non assigné'} · dernière position ${
+          tour.monitoring.gpsLastSeenMinutes == null ? 'jamais reçue' : `il y a ${tour.monitoring.gpsLastSeenMinutes} min`
+        }`,
+        href: `/dispatch/tours/${tour.id}`
+      });
+    }
+
+    if (tour.metrics.overdueStops > 0) {
+      alerts.push({
+        level: 'warning',
+        title: 'Arrêt potentiellement bloqué',
+        text: `${tour.reference} · ${tour.metrics.overdueStops} arrêt(s) en retard ou trop longs`,
+        href: `/dispatch/tours/${tour.id}`
+      });
+    }
+  }
+
+  const proofsTodayCount = activeTourDetails.reduce((sum, tour) => sum + (tour?.metrics.proofCount || 0), 0);
+  const noDriverCount = toursToday.filter((tour) => !tour.driver_id).length;
+
+  return {
+    counts: {
+      users: profiles.length,
+      toursToday: toursToday.length,
+      activeTours: activeTours.length,
+      completedToday: completedToday.length,
+      noDriverToday: noDriverCount,
+      alerts: alerts.length,
+      proofsActiveTours: proofsTodayCount
+    },
+    alerts: alerts.slice(0, 10),
+    tours: tours.slice(0, 8),
+    activeTourDetails: activeTourDetails.slice(0, 6)
+  };
+}
+
 app.use(ensureSupabaseConfigured);
 
 app.use((req, res, next) => {
@@ -563,27 +643,12 @@ app.post('/login', async (req, res) => {
     const username = String(req.body.username || '').trim();
     const password = String(req.body.password || '');
 
-    console.log('[LOGIN] username reçu =', username);
-
     if (!username || !password) {
       flash(req, 'Nom d’utilisateur et mot de passe requis.');
       return res.redirect('/login');
     }
 
     const profile = await getProfileByUsername(username);
-    console.log(
-      '[LOGIN] profile trouvé =',
-      profile
-        ? {
-            id: profile.id,
-            username: profile.username,
-            role: profile.role,
-            auth_user_id: profile.auth_user_id,
-            is_active: profile.is_active
-          }
-        : null
-    );
-
     if (!profile || !profile.is_active || !profile.auth_user_id) {
       flash(req, 'Compte introuvable ou inactif.');
       return res.redirect('/login');
@@ -593,16 +658,8 @@ app.post('/login', async (req, res) => {
       profile.auth_user_id
     );
 
-    if (authInfoError) {
-      console.error('[LOGIN] getUserById error =', authInfoError);
-      flash(req, 'Erreur getUserById.');
-      return res.redirect('/login');
-    }
-
-    console.log('[LOGIN] email auth =', authInfo?.user?.email || null);
-
-    if (!authInfo?.user?.email) {
-      flash(req, 'Email auth introuvable.');
+    if (authInfoError || !authInfo?.user?.email) {
+      flash(req, 'Impossible de récupérer le compte auth Supabase.');
       return res.redirect('/login');
     }
 
@@ -612,14 +669,8 @@ app.post('/login', async (req, res) => {
       password
     });
 
-    if (signInError) {
-      console.error('[LOGIN] signInWithPassword error =', signInError);
-      flash(req, `Erreur login Supabase: ${signInError.message}`);
-      return res.redirect('/login');
-    }
-
-    if (!signInData?.user) {
-      flash(req, 'Utilisateur non retourné par Supabase.');
+    if (signInError || !signInData?.user) {
+      flash(req, `Erreur login Supabase: ${signInError?.message || 'identifiants invalides'}`);
       return res.redirect('/login');
     }
 
@@ -632,10 +683,9 @@ app.post('/login', async (req, res) => {
       email: authInfo.user.email
     };
 
-    console.log('[LOGIN] succès pour', username);
     return res.redirect('/');
   } catch (error) {
-    console.error('[LOGIN] catch fatal =', error);
+    console.error('[LOGIN] fatal =', error);
     flash(req, `Erreur de connexion: ${error.message}`);
     return res.redirect('/login');
   }
@@ -646,24 +696,20 @@ app.post('/logout', (req, res) => {
   res.redirect('/login');
 });
 
+app.get('/logout', (req, res) => {
+  req.session = null;
+  res.redirect('/login');
+});
+
 app.get('/dispatch', requireRole('dispatch'), async (req, res) => {
   try {
-    const users = await fetchAllProfiles();
-    const tours = await fetchTours();
-    const { data: templates, error: templateError } = await admin
-      .from('route_templates')
-      .select('id');
-    if (templateError) throw templateError;
-
+    const dashboard = await buildDispatchDashboard();
     res.render('dispatch/dashboard', {
       title: 'Dashboard dispatch',
-      counts: {
-        users: users.length,
-        toursToday: tours.filter((item) => item.date === today()).length,
-        activeTours: tours.filter((item) => item.status === 'in_progress').length,
-        recurrences: (templates || []).length
-      },
-      tours: tours.slice(0, 8)
+      counts: dashboard.counts,
+      tours: dashboard.tours,
+      alerts: dashboard.alerts,
+      activeTourDetails: dashboard.activeTourDetails
     });
   } catch (error) {
     console.error(error);
@@ -811,52 +857,16 @@ app.post('/dispatch/users/:id/delete', requireRole('dispatch'), async (req, res)
   }
 });
 
-app.post('/dispatch/tours/:id/delete', requireRole('dispatch'), async (req, res) => {
-  try {
-    const tourId = req.params.id;
-
-    const { error: proofsError } = await admin
-      .from('proof_photos')
-      .delete()
-      .eq('tour_id', tourId);
-    if (proofsError) throw proofsError;
-
-    const { error: gpsError } = await admin
-      .from('gps_tracking_points')
-      .delete()
-      .eq('tour_id', tourId);
-    if (gpsError) throw gpsError;
-
-    const { error: reportsError } = await admin
-      .from('client_reports')
-      .delete()
-      .eq('tour_id', tourId);
-    if (reportsError) throw reportsError;
-
-    const { error: stopsError } = await admin
-      .from('tour_stops')
-      .delete()
-      .eq('tour_id', tourId);
-    if (stopsError) throw stopsError;
-
-    const { error: tourError } = await admin
-      .from('tours')
-      .delete()
-      .eq('id', tourId);
-    if (tourError) throw tourError;
-
-    flash(req, 'Tournée supprimée.');
-    res.redirect('/dispatch/tours');
-  } catch (error) {
-    console.error(error);
-    flash(req, `Erreur suppression tournée : ${error.message}`);
-    res.redirect('/dispatch/tours');
-  }
-});
-
 app.get('/dispatch/tours', requireRole('dispatch'), async (req, res) => {
   try {
-    const tours = await fetchTours();
+    const filters = {
+      tour_date: req.query.date || undefined,
+      assigned_driver_profile_id: req.query.driver_id || undefined,
+      client_profile_id: req.query.client_id || undefined,
+      status: req.query.status || undefined
+    };
+
+    const tours = await fetchTours(filters);
     const profiles = await fetchAllProfiles();
     const drivers = profiles.filter((item) => item.role === 'driver' && item.is_active);
     const clients = profiles.filter((item) => item.role === 'client' && item.is_active);
@@ -866,11 +876,51 @@ app.get('/dispatch/tours', requireRole('dispatch'), async (req, res) => {
       tours,
       drivers,
       clients,
-      today
+      today,
+      filters: {
+        date: req.query.date || '',
+        driver_id: req.query.driver_id || '',
+        client_id: req.query.client_id || '',
+        status: req.query.status || ''
+      }
     });
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur tournées');
+  }
+});
+
+app.get('/dispatch/tours/export.csv', requireRole('dispatch'), async (req, res) => {
+  try {
+    const filters = {
+      tour_date: req.query.date || undefined,
+      assigned_driver_profile_id: req.query.driver_id || undefined,
+      client_profile_id: req.query.client_id || undefined,
+      status: req.query.status || undefined
+    };
+    const tours = await fetchTours(filters);
+
+    const csv = stringify(
+      tours.map((tour) => ({
+        reference: tour.reference,
+        date: tour.date,
+        driver: tour.driver_name || '',
+        client: tour.client_name || '',
+        status: tour.status,
+        started_at: tour.started_at || '',
+        completed_at: tour.completed_at || '',
+        total_km: tour.km_total || 0,
+        notes: tour.notes || ''
+      })),
+      { header: true }
+    );
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="tours-export.csv"');
+    res.send(csv);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Erreur export tournées');
   }
 });
 
@@ -924,6 +974,49 @@ app.post('/dispatch/tours/duplicate-day', requireRole('dispatch'), async (req, r
   }
 });
 
+app.post('/dispatch/tours/:id/delete', requireRole('dispatch'), async (req, res) => {
+  try {
+    const tourId = req.params.id;
+
+    const { error: proofsError } = await admin
+      .from('proof_photos')
+      .delete()
+      .eq('tour_id', tourId);
+    if (proofsError) throw proofsError;
+
+    const { error: gpsError } = await admin
+      .from('gps_tracking_points')
+      .delete()
+      .eq('tour_id', tourId);
+    if (gpsError) throw gpsError;
+
+    const { error: reportsError } = await admin
+      .from('client_reports')
+      .delete()
+      .eq('tour_id', tourId);
+    if (reportsError) throw reportsError;
+
+    const { error: stopsError } = await admin
+      .from('tour_stops')
+      .delete()
+      .eq('tour_id', tourId);
+    if (stopsError) throw stopsError;
+
+    const { error: tourError } = await admin
+      .from('tours')
+      .delete()
+      .eq('id', tourId);
+    if (tourError) throw tourError;
+
+    flash(req, 'Tournée supprimée.');
+    res.redirect('/dispatch/tours');
+  } catch (error) {
+    console.error(error);
+    flash(req, `Erreur suppression tournée : ${error.message}`);
+    res.redirect('/dispatch/tours');
+  }
+});
+
 app.get('/dispatch/tours/:id', requireRole('dispatch'), async (req, res) => {
   try {
     const tour = await fetchTourById(req.params.id);
@@ -932,6 +1025,37 @@ app.get('/dispatch/tours/:id', requireRole('dispatch'), async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur détail tournée');
+  }
+});
+
+app.get('/dispatch/tours/:id/export.csv', requireRole('dispatch'), async (req, res) => {
+  try {
+    const tour = await fetchTourById(req.params.id);
+    if (!tour) return res.status(404).send('Tournée introuvable');
+
+    const csv = stringify(
+      tour.stops.map((stop) => ({
+        sequence_no: stop.sequence_no,
+        stop_type: stop.stop_type,
+        status: stop.status,
+        name: stop.name,
+        address: stop.address,
+        contact_name: stop.contact_name || '',
+        contact_phone: stop.contact_phone || '',
+        arrived_at: stop.arrived_at || '',
+        departed_at: stop.departed_at || '',
+        proof_count: stop.proof_count || 0,
+        instructions: stop.instructions || ''
+      })),
+      { header: true }
+    );
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${tour.reference}-stops.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Erreur export détails tournée');
   }
 });
 
@@ -1490,7 +1614,7 @@ app.get('/media/proofs/:id', requireAuth, async (req, res) => {
 
 if (require.main === module) {
   app.listen(PORT, () => {
-    console.log(`InterGlobe Web MVP lancé sur http://localhost:${PORT}`);
+    console.log(`InterGlobe Web V3 lancé sur http://localhost:${PORT}`);
   });
 }
 
