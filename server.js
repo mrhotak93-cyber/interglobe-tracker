@@ -1373,7 +1373,21 @@ app.get('/driver/tours/:id', requireRole('driver'), async (req, res) => {
       return res.status(404).send('Tournée introuvable');
     }
 
-    res.render('driver/tour', { title: tour.reference, tour });
+    const currentStop =
+      tour.stops.find((stop) => stop.status === 'arrived') ||
+      tour.stops.find((stop) => stop.status === 'pending') ||
+      null;
+
+    const completedStops = tour.stops.filter((stop) => stop.status === 'done').length;
+    const totalStops = tour.stops.length;
+
+    res.render('driver/tour', {
+      title: tour.reference,
+      tour,
+      currentStop,
+      completedStops,
+      totalStops
+    });
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur détail tournée chauffeur');
@@ -1459,6 +1473,18 @@ app.post('/driver/stops/:id/depart', requireRole('driver'), async (req, res) => 
       .eq('id', req.params.id)
       .single();
     if (fetchError) throw fetchError;
+
+    const { data: proofs, error: proofsError } = await admin
+      .from('proof_photos')
+      .select('id')
+      .eq('stop_id', req.params.id)
+      .limit(1);
+    if (proofsError) throw proofsError;
+
+    if (!proofs || proofs.length === 0) {
+      flash(req, 'Ajoute au moins une preuve de livraison avant de partir.');
+      return res.redirect(`/driver/tours/${stop.tour_id}`);
+    }
 
     const { error } = await admin
       .from('tour_stops')
