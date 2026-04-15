@@ -77,10 +77,19 @@
             <td><span class="badge <%= tour.status %>"><%= tour.status %></span></td>
             <td><%= tour.km_total || 0 %> km</td>
             <td>
-              <div class="inline-actions">
-                <a class="btn small" href="/dispatch/tours/<%= tour.id %>">Détail</a>
-                <a class="btn small" href="/dispatch/tours/<%= tour.id %>/edit">Modifier</a>
-              </div>
+             <div class="inline-actions">
+  <a class="btn small" href="/dispatch/tours/<%= tour.id %>">Détail</a>
+  <a class="btn small" href="/dispatch/tours/<%= tour.id %>/edit">Modifier</a>
+
+  <form
+    action="/dispatch/tours/<%= tour.id %>/unarchive"
+    method="POST"
+    style="display:inline;"
+    onsubmit="return confirm('Désarchiver cette tournée ?');"
+  >
+    <button class="btn small" type="submit">Désarchiver</button>
+  </form>
+</div>
             </td>
           </tr>
         <% }) %>

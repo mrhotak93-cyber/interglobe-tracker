@@ -1088,6 +1088,23 @@ app.post('/dispatch/tours/:id/archive', requireRole('dispatch'), async (req, res
   }
 });
 
+app.post('/dispatch/tours/:id/unarchive', requireRole('dispatch'), async (req, res) => {
+  try {
+    const { error } = await admin
+      .from('tours')
+      .update({ is_archived: false })
+      .eq('id', req.params.id);
+    if (error) throw error;
+
+    flash(req, 'Tournée désarchivée.');
+    res.redirect('/dispatch/tours/archives');
+  } catch (error) {
+    console.error(error);
+    flash(req, 'Erreur désarchivage tournée.');
+    res.redirect('/dispatch/tours/archives');
+  }
+});
+
 app.get('/dispatch/tours/:id', requireRole('dispatch'), async (req, res) => {
   try {
     const tour = await fetchTourById(req.params.id);
