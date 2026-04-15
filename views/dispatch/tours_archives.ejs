@@ -1,0 +1,98 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="card top-gap">
+  <div class="section-header">
+    <h1>Archives des tournées</h1>
+    <div class="inline-actions">
+      <a class="btn" href="/dispatch/tours">Retour aux tournées actives</a>
+    </div>
+  </div>
+
+  <form method="GET" action="/dispatch/tours/archives" class="grid cols-4">
+    <label>
+      <span>Date</span>
+      <input type="date" name="date" value="<%= filters.date %>" />
+    </label>
+    <label>
+      <span>Chauffeur</span>
+      <select name="driver_id">
+        <option value="">Tous</option>
+        <% drivers.forEach((driver) => { %>
+          <option value="<%= driver.id %>" <%= String(filters.driver_id) === String(driver.id) ? 'selected' : '' %>><%= driver.full_name %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>
+      <span>Client</span>
+      <select name="client_id">
+        <option value="">Tous</option>
+        <% clients.forEach((client) => { %>
+          <option value="<%= client.id %>" <%= String(filters.client_id) === String(client.id) ? 'selected' : '' %>><%= client.full_name %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>
+      <span>Statut</span>
+      <select name="status">
+        <option value="">Tous</option>
+        <option value="draft" <%= filters.status === 'draft' ? 'selected' : '' %>>draft</option>
+        <option value="assigned" <%= filters.status === 'assigned' ? 'selected' : '' %>>assigned</option>
+        <option value="in_progress" <%= filters.status === 'in_progress' ? 'selected' : '' %>>in_progress</option>
+        <option value="completed" <%= filters.status === 'completed' ? 'selected' : '' %>>completed</option>
+      </select>
+    </label>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Filtrer</button>
+      <a class="btn" href="/dispatch/tours/archives">Réinitialiser</a>
+    </div>
+  </form>
+</section>
+
+<section class="card top-gap">
+  <div class="section-header">
+    <h2>Liste des tournées archivées</h2>
+    <span class="badge neutral"><%= tours.length %> résultat(s)</span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Référence</th>
+          <th>Date</th>
+          <th>Chauffeur</th>
+          <th>Client</th>
+          <th>Statut</th>
+          <th>Km</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% tours.forEach((tour) => { %>
+          <tr>
+            <td><strong><%= tour.reference %></strong></td>
+            <td><%= tour.date %></td>
+            <td><%= tour.driver_name || '-' %></td>
+            <td><%= tour.client_name || '-' %></td>
+            <td><span class="badge <%= tour.status %>"><%= tour.status %></span></td>
+            <td><%= tour.km_total || 0 %> km</td>
+            <td>
+              <div class="inline-actions">
+                <a class="btn small" href="/dispatch/tours/<%= tour.id %>">Détail</a>
+                <a class="btn small" href="/dispatch/tours/<%= tour.id %>/edit">Modifier</a>
+              </div>
+            </td>
+          </tr>
+        <% }) %>
+
+        <% if (!tours.length) { %>
+          <tr>
+            <td colspan="7" class="muted">Aucune tournée archivée.</td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<%- include('../partials/footer') %>

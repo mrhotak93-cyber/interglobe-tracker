@@ -300,7 +300,8 @@ async function fetchTourById(tourId) {
   stops.forEach((stop) => {
     stop.proofs = proofsByStop[stop.id] || [];
     stop.proof_count = stop.proofs.length;
-    stop.is_overdue = stop.status !== 'done' && diffMinutesFromNow(stop.arrived_at || tour.started_at) > STOP_OVERDUE_MINUTES;
+    stop.is_overdue =
+      stop.status !== 'done' && diffMinutesFromNow(stop.arrived_at || tour.started_at) > STOP_OVERDUE_MINUTES;
   });
 
   const { data: latestLocation, error: locationError } = await admin
@@ -893,6 +894,41 @@ app.get('/dispatch/tours', requireRole('dispatch'), async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur tournées');
+  }
+});
+
+app.get('/dispatch/tours/archives', requireRole('dispatch'), async (req, res) => {
+  try {
+    const profiles = await fetchAllProfiles();
+    const drivers = profiles.filter((item) => item.role === 'driver' && item.is_active);
+    const clients = profiles.filter((item) => item.role === 'client' && item.is_active);
+
+    const filters = {
+      tour_date: req.query.date || undefined,
+      assigned_driver_profile_id: req.query.driver_id || undefined,
+      client_profile_id: req.query.client_id || undefined,
+      status: req.query.status || undefined,
+      is_archived: true
+    };
+
+    const tours = await fetchTours(filters, { includeArchived: true });
+
+    res.render('dispatch/tours_archives', {
+      title: 'Archives',
+      tours,
+      drivers,
+      clients,
+      today,
+      filters: {
+        date: req.query.date || '',
+        driver_id: req.query.driver_id || '',
+        client_id: req.query.client_id || '',
+        status: req.query.status || ''
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Erreur archives tournées');
   }
 });
 
