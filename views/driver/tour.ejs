@@ -3,11 +3,27 @@
 <section class="hero">
   <div>
     <h1><%= tour.reference %></h1>
-    <p class="muted">Suivi en direct de la tournée.</p>
+    <p class="muted">
+      Date : <strong><%= tour.date %></strong> · Client : <strong><%= tour.client_name || '-' %></strong>
+    </p>
   </div>
+
   <div class="actions">
-    <% if (tour.latestLocation) { %>
-      <a class="btn primary" target="_blank" href="https://www.google.com/maps?q=<%= tour.latestLocation.latitude %>,<%= tour.latestLocation.longitude %>">Voir le chauffeur sur la carte</a>
+    <% if (tour.status === 'assigned') { %>
+      <form action="/driver/tours/<%= tour.id %>/start" method="POST" class="inline-form">
+        <button class="btn primary" type="submit">Démarrer la tournée</button>
+      </form>
+    <% } %>
+
+    <% if (tour.status !== 'completed') { %>
+      <form
+        action="/driver/tours/<%= tour.id %>/complete"
+        method="POST"
+        class="inline-form"
+        onsubmit="return confirm('Terminer cette tournée ?');"
+      >
+        <button class="btn" type="submit">Terminer la tournée</button>
+      </form>
     <% } %>
   </div>
 </section>
@@ -31,37 +47,14 @@
   </article>
 </section>
 
-<section class="card top-gap">
-  <h2>Position actuelle du chauffeur</h2>
-  <div id="locationBox" class="location-box">
-    <% if (tour.latestLocation) { %>
-      <div>Latitude : <span id="locLat"><%= tour.latestLocation.latitude %></span></div>
-      <div>Longitude : <span id="locLng"><%= tour.latestLocation.longitude %></span></div>
-      <div>Dernière mise à jour : <span id="locAt"><%= formatDateTime(tour.latestLocation.created_at) %></span></div>
-      <div class="top-gap">
-        <a id="mapsLink" class="btn small" target="_blank" href="https://www.google.com/maps?q=<%= tour.latestLocation.latitude %>,<%= tour.latestLocation.longitude %>">Ouvrir la position</a>
-      </div>
-    <% } else { %>
-      <div id="noLocation">Aucune position GPS reçue pour le moment.</div>
-      <a id="mapsLink" class="btn small hidden" target="_blank" href="#">Ouvrir la position</a>
-    <% } %>
-  </div>
-</section>
-
-<section class="card top-gap">
-  <h2>Rapport de tournée</h2>
-  <p class="muted">
-    Quand la tournée est terminée, cette page affiche le mini rapport final :
-    heure de début, heure de fin et nombre de kilomètres parcourus.
-  </p>
-</section>
-
 <section class="stack top-gap">
   <% tour.stops.forEach((stop) => { %>
     <article class="stop-card" data-stop-id="<%= stop.id %>">
       <div class="section-header">
         <div>
-          <div class="stop-seq">#<%= stop.sequence_no %> · <%= stop.stop_type === 'loading' ? 'Chargement' : 'Déchargement' %></div>
+          <div class="stop-seq">
+            #<%= stop.sequence_no %> · <%= stop.stop_type === 'loading' ? 'Chargement' : 'Déchargement' %>
+          </div>
           <h3><%= stop.name %></h3>
           <div class="muted"><%= stop.address %></div>
         </div>
@@ -72,6 +65,58 @@
         <div><strong>Heure arrivée :</strong> <span data-stop-arrived><%= formatDateTime(stop.arrived_at) || '-' %></span></div>
         <div><strong>Heure départ :</strong> <span data-stop-departed><%= formatDateTime(stop.departed_at) || '-' %></span></div>
       </div>
+
+      <div class="inline-actions top-gap">
+        <a
+          class="btn small"
+          target="_blank"
+          href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(stop.address || '') %>"
+        >
+          Ouvrir dans Google Maps
+        </a>
+
+        <% if (stop.contact_phone) { %>
+          <a class="btn small" href="tel:<%= stop.contact_phone %>">Appeler le client</a>
+        <% } %>
+
+        <% if (stop.status === 'pending' && tour.status !== 'completed') { %>
+          <form action="/driver/stops/<%= stop.id %>/arrive" method="POST" class="inline-form">
+            <button class="btn small primary" type="submit">Arrivée</button>
+          </form>
+        <% } %>
+
+        <% if (stop.status === 'arrived' && tour.status !== 'completed') { %>
+          <form action="/driver/stops/<%= stop.id %>/depart" method="POST" class="inline-form">
+            <button class="btn small" type="submit">Départ</button>
+          </form>
+        <% } %>
+      </div>
+
+      <% if (tour.status !== 'completed') { %>
+        <section class="card top-gap">
+          <h4>Ajouter une preuve</h4>
+          <form
+            action="/driver/stops/<%= stop.id %>/proofs"
+            method="POST"
+            enctype="multipart/form-data"
+            class="grid cols-2"
+          >
+            <label class="full">
+              <span>Photos</span>
+              <input type="file" name="photos" accept="image/*" multiple />
+            </label>
+
+            <label class="full">
+              <span>Note</span>
+              <input type="text" name="note" placeholder="Commentaire éventuel" />
+            </label>
+
+            <div class="form-actions">
+              <button class="btn small primary" type="submit">Envoyer la preuve</button>
+            </div>
+          </form>
+        </section>
+      <% } %>
 
       <% if (stop.proofs.length) { %>
         <div class="proof-grid top-gap">
@@ -104,23 +149,10 @@
         if (!data.ok) return;
 
         document.getElementById('tourStatus').textContent = data.tour.status;
+        document.getElementById('tourStatus').className = `stat-value badge ${data.tour.status}`;
         document.getElementById('tourStart').textContent = toLocal(data.tour.started_at);
         document.getElementById('tourEnd').textContent = toLocal(data.tour.completed_at);
         document.getElementById('tourKm').textContent = data.tour.km_total;
-
-        if (data.tour.latestLocation) {
-          const loc = data.tour.latestLocation;
-          const noLocation = document.getElementById('noLocation');
-          if (noLocation) noLocation.remove();
-          document.getElementById('locationBox').innerHTML = `
-            <div>Latitude : <span id="locLat">${loc.latitude}</span></div>
-            <div>Longitude : <span id="locLng">${loc.longitude}</span></div>
-            <div>Dernière mise à jour : <span id="locAt">${toLocal(loc.created_at)}</span></div>
-            <div class="top-gap">
-              <a id="mapsLink" class="btn small" target="_blank" href="${loc.maps_link}">Ouvrir la position</a>
-            </div>
-          `;
-        }
 
         data.tour.stops.forEach((stop) => {
           const root = document.querySelector(`[data-stop-id="${stop.id}"]`);
