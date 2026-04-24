@@ -1652,8 +1652,25 @@ app.post('/driver/tours/:id/location', requireRole('driver'), async (req, res) =
 
 app.get('/client', requireRole('client'), async (req, res) => {
   try {
-    const tours = await fetchTours({ client_profile_id: req.session.user.profile_id });
-    res.render('client/dashboard', { title: 'Suivi client', tours });
+    const clientProfileId = req.session.user.profile_id;
+
+    const tours = await fetchTours({ client_profile_id: clientProfileId });
+
+    const archivedTours = await fetchTours(
+      {
+        client_profile_id: clientProfileId,
+        is_archived: true
+      },
+      {
+        includeArchived: true
+      }
+    );
+
+    res.render('client/dashboard', {
+      title: 'Suivi client',
+      tours,
+      archivedTours
+    });
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur suivi client');
