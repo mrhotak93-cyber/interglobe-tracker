@@ -117,6 +117,97 @@
   </article>
 </section>
 
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+
+<section class="card top-gap">
+  <div class="section-header">
+    <h2>Trajet du chauffeur</h2>
+    <% if (tour.latestLocation) { %>
+      <a class="btn small" target="_blank" href="<%= tour.latestLocation.maps_link %>">Voir position actuelle</a>
+    <% } %>
+  </div>
+
+  <div id="tour-map" style="height: 420px; border-radius: 16px; overflow: hidden;"></div>
+
+  <p class="muted top-gap">
+    Affichage de la position actuelle et du tracé complet du trajet.
+  </p>
+</section>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  (function () {
+    const rawPoints = <%- JSON.stringify((tour.routePoints || []).map((p) => ({
+      lat: Number(p.latitude),
+      lng: Number(p.longitude),
+      tracked_at: p.tracked_at
+    }))) %>;
+
+    const map = L.map('tour-map');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    let routeLayer = null;
+    let startMarker = null;
+    let currentMarker = null;
+
+    function drawRoute(points) {
+      if (routeLayer) map.removeLayer(routeLayer);
+      if (startMarker) map.removeLayer(startMarker);
+      if (currentMarker) map.removeLayer(currentMarker);
+
+      if (!points.length) {
+        map.setView([50.8503, 4.3517], 8);
+        return;
+      }
+
+      const latlngs = points.map((p) => [p.lat, p.lng]);
+
+      if (points.length === 1) {
+        currentMarker = L.marker(latlngs[0]).addTo(map).bindPopup('Position actuelle');
+        map.setView(latlngs[0], 15);
+        return;
+      }
+
+      routeLayer = L.polyline(latlngs, {
+        color: '#133b72',
+        weight: 5
+      }).addTo(map);
+
+      startMarker = L.marker(latlngs[0]).addTo(map).bindPopup('Début du trajet');
+      currentMarker = L.marker(latlngs[latlngs.length - 1]).addTo(map).bindPopup('Position actuelle');
+
+      map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+    }
+
+    drawRoute(rawPoints);
+
+    async function refreshRoute() {
+      try {
+        const res = await fetch('/api/tours/<%= tour.id %>/status');
+        const data = await res.json();
+        if (!data.ok) return;
+
+        const points = (data.tour.routePoints || []).map((p) => ({
+          lat: Number(p.latitude),
+          lng: Number(p.longitude),
+          tracked_at: p.tracked_at
+        }));
+
+        drawRoute(points);
+      } catch (err) {
+        console.error('Erreur refresh carte:', err);
+      }
+    }
+
+    setInterval(refreshRoute, 10000);
+  })();
+</script>
+
 <section class="card top-gap">
   <div class="section-header">
     <h2>Arrêts de la tournée</h2>

@@ -3,11 +3,17 @@
 <section class="hero">
   <div>
     <h1><%= tour.reference %></h1>
-    <p class="muted">Suivi en direct de la tournée.</p>
+    <p class="muted">
+      Date : <strong><%= tour.date %></strong>
+      <% if (tour.driver_name) { %>
+        · Chauffeur : <strong><%= tour.driver_name %></strong>
+      <% } %>
+    </p>
   </div>
   <div class="actions">
+    <a class="btn" href="/client">Retour au suivi client</a>
     <% if (tour.latestLocation) { %>
-      <a class="btn primary" target="_blank" href="https://www.google.com/maps?q=<%= tour.latestLocation.latitude %>,<%= tour.latestLocation.longitude %>">Voir le chauffeur sur la carte</a>
+      <a class="btn" target="_blank" href="<%= tour.latestLocation.maps_link %>">Voir position actuelle</a>
     <% } %>
   </div>
 </section>
@@ -15,123 +21,192 @@
 <section class="grid cols-4">
   <article class="card stat-card">
     <div class="stat-label">Statut</div>
-    <div class="stat-value badge <%= tour.status %>" id="tourStatus"><%= tour.status %></div>
+    <div class="stat-value badge <%= tour.status %>"><%= tour.status %></div>
   </article>
+
+  <article class="card stat-card">
+    <div class="stat-label">Avancement</div>
+    <div class="stat-value small-value">
+      <%= tour.metrics.doneStops %>/<%= tour.metrics.totalStops %>
+    </div>
+  </article>
+
+  <article class="card stat-card">
+    <div class="stat-label">Preuves</div>
+    <div class="stat-value"><%= tour.metrics.proofCount %></div>
+  </article>
+
+  <article class="card stat-card">
+    <div class="stat-label">Km</div>
+    <div class="stat-value"><%= tour.km_total || 0 %></div>
+  </article>
+</section>
+
+<section class="grid cols-3 top-gap">
   <article class="card stat-card">
     <div class="stat-label">Début</div>
-    <div class="stat-value small-value" id="tourStart"><%= formatDateTime(tour.started_at) || '-' %></div>
+    <div class="stat-value small-value"><%= formatDateTime(tour.started_at) || '-' %></div>
   </article>
+
   <article class="card stat-card">
     <div class="stat-label">Fin</div>
-    <div class="stat-value small-value" id="tourEnd"><%= formatDateTime(tour.completed_at) || '-' %></div>
+    <div class="stat-value small-value"><%= formatDateTime(tour.completed_at) || '-' %></div>
   </article>
+
   <article class="card stat-card">
-    <div class="stat-label">Km parcourus</div>
-    <div class="stat-value"><span id="tourKm"><%= tour.km_total || 0 %></span> km</div>
+    <div class="stat-label">Dernier GPS</div>
+    <div class="stat-value small-value">
+      <%= tour.latestLocation ? 'il y a ' + tour.latestLocation.minutes_since + ' min' : 'jamais reçu' %>
+    </div>
   </article>
 </section>
+
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
 
 <section class="card top-gap">
-  <h2>Position actuelle du chauffeur</h2>
-  <div id="locationBox" class="location-box">
+  <div class="section-header">
+    <h2>Trajet du chauffeur</h2>
     <% if (tour.latestLocation) { %>
-      <div>Latitude : <span id="locLat"><%= tour.latestLocation.latitude %></span></div>
-      <div>Longitude : <span id="locLng"><%= tour.latestLocation.longitude %></span></div>
-      <div>Dernière mise à jour : <span id="locAt"><%= formatDateTime(tour.latestLocation.created_at) %></span></div>
-      <div class="top-gap">
-        <a id="mapsLink" class="btn small" target="_blank" href="https://www.google.com/maps?q=<%= tour.latestLocation.latitude %>,<%= tour.latestLocation.longitude %>">Ouvrir la position</a>
-      </div>
-    <% } else { %>
-      <div id="noLocation">Aucune position GPS reçue pour le moment.</div>
-      <a id="mapsLink" class="btn small hidden" target="_blank" href="#">Ouvrir la position</a>
+      <a class="btn small" target="_blank" href="<%= tour.latestLocation.maps_link %>">Voir sur Google Maps</a>
     <% } %>
   </div>
+
+  <div id="tour-map" style="height: 420px; border-radius: 16px; overflow: hidden;"></div>
+
+  <p class="muted top-gap">
+    Position actuelle et tracé complet de la tournée.
+  </p>
 </section>
 
-<section class="stack top-gap">
-  <% tour.stops.forEach((stop) => { %>
-    <article class="stop-card" data-stop-id="<%= stop.id %>">
-      <div class="section-header">
-        <div>
-          <div class="stop-seq">#<%= stop.sequence_no %> · <%= stop.stop_type === 'loading' ? 'Chargement' : 'Déchargement' %></div>
-          <h3><%= stop.name %></h3>
-          <div class="muted"><%= stop.address %></div>
-        </div>
-        <span class="badge <%= stop.status %>" data-stop-status><%= stop.status %></span>
-      </div>
-
-      <div class="grid cols-2 compact">
-        <div><strong>Heure arrivée :</strong> <span data-stop-arrived><%= formatDateTime(stop.arrived_at) || '-' %></span></div>
-        <div><strong>Heure départ :</strong> <span data-stop-departed><%= formatDateTime(stop.departed_at) || '-' %></span></div>
-      </div>
-
-      <% if (stop.proofs.length) { %>
-        <div class="proof-grid top-gap">
-          <% stop.proofs.forEach((proof) => { %>
-            <a href="<%= proof.image_path %>" target="_blank" class="proof-item">
-              <img src="<%= proof.image_path %>" alt="preuve" />
-            </a>
-          <% }) %>
-        </div>
-      <% } %>
-    </article>
-  <% }) %>
-</section>
-
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   (function () {
-    const tourId = <%- JSON.stringify(tour.id) %>;
+    const rawPoints = <%- JSON.stringify((tour.routePoints || []).map((p) => ({
+      lat: Number(p.latitude),
+      lng: Number(p.longitude),
+      tracked_at: p.tracked_at
+    }))) %>;
 
-    function toLocal(iso) {
-      if (!iso) return '-';
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return iso;
-      return d.toLocaleString('fr-BE');
+    const map = L.map('tour-map');
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    let routeLayer = null;
+    let startMarker = null;
+    let currentMarker = null;
+
+    function drawRoute(points) {
+      if (routeLayer) map.removeLayer(routeLayer);
+      if (startMarker) map.removeLayer(startMarker);
+      if (currentMarker) map.removeLayer(currentMarker);
+
+      if (!points.length) {
+        map.setView([50.8503, 4.3517], 8);
+        return;
+      }
+
+      const latlngs = points.map((p) => [p.lat, p.lng]);
+
+      if (points.length === 1) {
+        currentMarker = L.marker(latlngs[0]).addTo(map).bindPopup('Position actuelle');
+        map.setView(latlngs[0], 15);
+        return;
+      }
+
+      routeLayer = L.polyline(latlngs, {
+        color: '#133b72',
+        weight: 5
+      }).addTo(map);
+
+      startMarker = L.marker(latlngs[0]).addTo(map).bindPopup('Début du trajet');
+      currentMarker = L.marker(latlngs[latlngs.length - 1]).addTo(map).bindPopup('Position actuelle');
+
+      map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
     }
 
-    async function refreshStatus() {
+    drawRoute(rawPoints);
+
+    async function refreshRoute() {
       try {
-        const res = await fetch(`/api/tours/${tourId}/status`);
+        const res = await fetch('/api/tours/<%= tour.id %>/status');
         const data = await res.json();
         if (!data.ok) return;
 
-        document.getElementById('tourStatus').textContent = data.tour.status;
-        document.getElementById('tourStart').textContent = toLocal(data.tour.started_at);
-        document.getElementById('tourEnd').textContent = toLocal(data.tour.completed_at);
-        document.getElementById('tourKm').textContent = data.tour.km_total;
+        const points = (data.tour.routePoints || []).map((p) => ({
+          lat: Number(p.latitude),
+          lng: Number(p.longitude),
+          tracked_at: p.tracked_at
+        }));
 
-        if (data.tour.latestLocation) {
-          const loc = data.tour.latestLocation;
-          const noLocation = document.getElementById('noLocation');
-          if (noLocation) noLocation.remove();
-          document.getElementById('locationBox').innerHTML = `
-            <div>Latitude : <span id="locLat">${loc.latitude}</span></div>
-            <div>Longitude : <span id="locLng">${loc.longitude}</span></div>
-            <div>Dernière mise à jour : <span id="locAt">${toLocal(loc.created_at)}</span></div>
-            <div class="top-gap">
-              <a id="mapsLink" class="btn small" target="_blank" href="${loc.maps_link}">Ouvrir la position</a>
-            </div>
-          `;
-        }
-
-        data.tour.stops.forEach((stop) => {
-          const root = document.querySelector(`[data-stop-id="${stop.id}"]`);
-          if (!root) return;
-          const statusEl = root.querySelector('[data-stop-status]');
-          const arrivedEl = root.querySelector('[data-stop-arrived]');
-          const departedEl = root.querySelector('[data-stop-departed]');
-          statusEl.textContent = stop.status;
-          statusEl.className = `badge ${stop.status}`;
-          arrivedEl.textContent = toLocal(stop.arrived_at);
-          departedEl.textContent = toLocal(stop.departed_at);
-        });
-      } catch (error) {
-        console.error(error);
+        drawRoute(points);
+      } catch (err) {
+        console.error('Erreur refresh carte:', err);
       }
     }
 
-    setInterval(refreshStatus, 10000);
+    setInterval(refreshRoute, 10000);
   })();
 </script>
+
+<section class="card top-gap">
+  <div class="section-header">
+    <h2>Étapes de la tournée</h2>
+  </div>
+
+  <div class="stack">
+    <% if (!tour.stops.length) { %>
+      <p class="muted">Aucun arrêt pour le moment.</p>
+    <% } %>
+
+    <% tour.stops.forEach((stop) => { %>
+      <article class="stop-card">
+        <div class="stop-header">
+          <div>
+            <div class="stop-seq">
+              #<%= stop.sequence_no %> · <%= stop.stop_type === 'loading' ? 'Chargement' : 'Déchargement' %>
+            </div>
+            <h3><%= stop.name %></h3>
+            <div class="muted"><%= stop.address %></div>
+          </div>
+          <div class="inline-actions">
+            <span class="badge <%= stop.status %>"><%= stop.status %></span>
+          </div>
+        </div>
+
+        <div class="grid cols-3 compact">
+          <div><strong>Arrivé :</strong> <%= formatDateTime(stop.arrived_at) || '-' %></div>
+          <div><strong>Départ :</strong> <%= formatDateTime(stop.departed_at) || '-' %></div>
+          <div><strong>Preuves :</strong> <%= stop.proof_count || 0 %></div>
+        </div>
+
+        <% if (stop.instructions) { %>
+          <p><strong>Instructions :</strong> <%= stop.instructions %></p>
+        <% } %>
+
+        <% if (stop.contact_name || stop.contact_phone) { %>
+          <p>
+            <strong>Contact :</strong>
+            <%= stop.contact_name || '-' %>
+            <%= stop.contact_phone ? ' - ' + stop.contact_phone : '' %>
+          </p>
+        <% } %>
+
+        <% if (stop.proofs.length) { %>
+          <div class="proof-grid">
+            <% stop.proofs.forEach((proof) => { %>
+              <a href="<%= proof.image_path %>" target="_blank" class="proof-item">
+                <img src="<%= proof.image_path %>" alt="preuve" />
+              </a>
+            <% }) %>
+          </div>
+        <% } %>
+      </article>
+    <% }) %>
+  </div>
+</section>
 
 <%- include('../partials/footer') %>

@@ -304,24 +304,25 @@ async function fetchTourById(tourId) {
       stop.status !== 'done' && diffMinutesFromNow(stop.arrived_at || tour.started_at) > STOP_OVERDUE_MINUTES;
   });
 
-  const { data: latestLocation, error: locationError } = await admin
+   const { data: routePointsRaw, error: routeError } = await admin
     .from('gps_tracking_points')
     .select('*')
     .eq('tour_id', tourId)
-    .order('tracked_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (locationError) throw locationError;
+    .order('tracked_at', { ascending: true });
+  if (routeError) throw routeError;
 
-  tour.stops = stops;
-  tour.latestLocation = latestLocation
-    ? {
-        ...latestLocation,
-        created_at: latestLocation.tracked_at,
-        minutes_since: diffMinutesFromNow(latestLocation.tracked_at),
-        maps_link: `https://www.google.com/maps?q=${latestLocation.latitude},${latestLocation.longitude}`
-      }
-    : null;
+  const routePoints = (routePointsRaw || []).map((point) => ({
+  ...point,
+  created_at: point.tracked_at,
+  minutes_since: diffMinutesFromNow(point.tracked_at),
+  maps_link: `https://www.google.com/maps?q=${point.latitude},${point.longitude}`
+}));
+
+const latestLocation = routePoints.length ? routePoints[routePoints.length - 1] : null;
+
+tour.stops = stops;
+tour.routePoints = routePoints;
+tour.latestLocation = latestLocation;
 
   tour.metrics = {
     totalStops: stops.length,
