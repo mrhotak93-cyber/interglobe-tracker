@@ -97,19 +97,42 @@
           </div>
         </form>
 
-        <form action="/dispatch/recurrences/<%= item.id %>/generate" method="POST" class="grid cols-2 bordered-left">
-          <label>
-            <span>Générer à partir du</span>
-            <input type="date" name="range_start" value="<%= today() %>" required />
-          </label>
-          <label>
-            <span>Jusqu’au</span>
-            <input type="date" name="range_end" value="<%= today() %>" required />
-          </label>
-          <div class="form-actions">
-            <button class="btn primary" type="submit">Générer les tournées</button>
-          </div>
-        </form>
+        <div class="stack bordered-left">
+          <form action="/dispatch/recurrences/<%= item.id %>/generate" method="POST" class="grid cols-2">
+            <label>
+              <span>Générer à partir du</span>
+              <input type="date" name="range_start" value="<%= today() %>" required />
+            </label>
+            <label>
+              <span>Jusqu’au</span>
+              <input type="date" name="range_end" value="<%= today() %>" required />
+            </label>
+            <div class="form-actions">
+              <button class="btn primary" type="submit">Générer les tournées</button>
+            </div>
+          </form>
+
+          <form
+            action="/dispatch/recurrences/<%= item.id %>/delete"
+            method="POST"
+            class="grid"
+            onsubmit="return confirm('Confirmer la suppression de cette récurrence ?');"
+          >
+            <label class="full">
+              <span>Suppression</span>
+              <select name="delete_scope">
+                <option value="recurrence_only">Supprimer seulement la récurrence</option>
+                <option value="recurrence_and_future">Supprimer la récurrence + les tournées futures non démarrées</option>
+              </select>
+            </label>
+            <p class="muted">
+              Les tournées déjà terminées ou en cours ne seront pas supprimées automatiquement.
+            </p>
+            <div class="form-actions">
+              <button class="btn danger" type="submit">Supprimer</button>
+            </div>
+          </form>
+        </div>
       </div>
     </article>
   <% }) %>

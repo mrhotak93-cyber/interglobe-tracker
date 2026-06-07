@@ -2116,6 +2116,104 @@ app.post('/dispatch/recurrences/:id/generate', requireRole('dispatch'), async (r
   }
 });
 
+
+async function deleteTourCascade(tourId) {
+  const { error: proofsError } = await admin
+    .from('proof_photos')
+    .delete()
+    .eq('tour_id', tourId);
+  if (proofsError) throw proofsError;
+
+  const { error: gpsError } = await admin
+    .from('gps_tracking_points')
+    .delete()
+    .eq('tour_id', tourId);
+  if (gpsError) throw gpsError;
+
+  const { error: reportsError } = await admin
+    .from('client_reports')
+    .delete()
+    .eq('tour_id', tourId);
+  if (reportsError) throw reportsError;
+
+  const { error: stopsError } = await admin
+    .from('tour_stops')
+    .delete()
+    .eq('tour_id', tourId);
+  if (stopsError) throw stopsError;
+
+  const { error: tourError } = await admin
+    .from('tours')
+    .delete()
+    .eq('id', tourId);
+  if (tourError) throw tourError;
+}
+
+app.post('/dispatch/recurrences/:id/delete', requireRole('dispatch'), async (req, res) => {
+  try {
+    const templateId = req.params.id;
+    const deleteScope = String(req.body.delete_scope || 'recurrence_only');
+
+    const { data: template, error: templateError } = await admin
+      .from('route_templates')
+      .select('id, name')
+      .eq('id', templateId)
+      .maybeSingle();
+    if (templateError) throw templateError;
+    if (!template) {
+      flash(req, 'Récurrence introuvable.');
+      return res.redirect('/dispatch/recurrences');
+    }
+
+    let deletedToursCount = 0;
+
+    if (deleteScope === 'recurrence_and_future') {
+      const { data: futureTours, error: futureToursError } = await admin
+        .from('tours')
+        .select('id')
+        .eq('template_id', templateId)
+        .gte('tour_date', today())
+        .in('status', ['draft', 'assigned']);
+      if (futureToursError) throw futureToursError;
+
+      for (const tour of futureTours || []) {
+        await deleteTourCascade(tour.id);
+        deletedToursCount += 1;
+      }
+    }
+
+    const { error: detachToursError } = await admin
+      .from('tours')
+      .update({ template_id: null })
+      .eq('template_id', templateId);
+    if (detachToursError) throw detachToursError;
+
+    const { error: stopsError } = await admin
+      .from('route_template_stops')
+      .delete()
+      .eq('template_id', templateId);
+    if (stopsError) throw stopsError;
+
+    const { error: deleteTemplateError } = await admin
+      .from('route_templates')
+      .delete()
+      .eq('id', templateId);
+    if (deleteTemplateError) throw deleteTemplateError;
+
+    flash(
+      req,
+      deleteScope === 'recurrence_and_future'
+        ? `Récurrence supprimée. ${deletedToursCount} tournée(s) future(s) supprimée(s).`
+        : 'Récurrence supprimée. Les tournées déjà créées sont conservées.'
+    );
+    return res.redirect('/dispatch/recurrences');
+  } catch (error) {
+    console.error(error);
+    flash(req, `Erreur suppression récurrence : ${error.message}`);
+    return res.redirect('/dispatch/recurrences');
+  }
+});
+
 app.get('/driver', requireRole('driver'), async (req, res) => {
   try {
     const tours = await fetchTours({ assigned_driver_profile_id: req.session.user.profile_id });
