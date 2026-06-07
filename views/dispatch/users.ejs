@@ -2,8 +2,10 @@
 
 <section class="split">
   <article class="card">
-    <h1>Créer un utilisateur</h1>
-    <form action="/dispatch/users" method="POST" class="grid cols-2">
+   <div class="section-header">
+  <h1>Créer un utilisateur</h1>
+</div>
+    <form action="/dispatch/users" method="POST" class="grid cols-2" id="createUserForm">
       <label>
         <span>Nom complet</span>
         <input name="full_name" required />
@@ -18,7 +20,7 @@
       </label>
       <label>
         <span>Rôle</span>
-        <select name="role" required>
+        <select name="role" id="roleSelect" required>
           <option value="dispatch">Dispatch</option>
           <option value="driver">Chauffeur</option>
           <option value="client">Client</option>
@@ -32,6 +34,28 @@
         <span>Société</span>
         <input name="company" value="InterGlobe" />
       </label>
+
+      <div class="full grid cols-2" id="driverOptions" style="display:none;">
+        <label>
+          <span>Type de chauffeur</span>
+          <select name="driver_type">
+            <option value="internal">Interne</option>
+            <option value="subcontractor">Sous-traitant</option>
+          </select>
+        </label>
+        <label>
+          <span>Véhicule assigné</span>
+          <select name="vehicle_id">
+            <option value="">-- Aucun véhicule --</option>
+            <% (vehicles || []).forEach((vehicle) => { %>
+              <option value="<%= vehicle.id %>">
+                <%= vehicle.label %> · <%= vehicle.dimensions_label %> · MMA <%= vehicle.mma_label %>
+              </option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
       <label class="checkbox">
         <input type="checkbox" name="active" checked />
         <span>Compte actif</span>
@@ -52,29 +76,46 @@
             <th>Nom</th>
             <th>Login</th>
             <th>Rôle</th>
+            <th>Type</th>
+            <th>Véhicule</th>
             <th>Actif</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           <% users.forEach((item) => { %>
+            <% const assignedVehicle = (vehicles || []).find((vehicle) => String(vehicle.id) === String(item.vehicle_id)); %>
             <tr>
               <td><%= item.full_name %></td>
               <td><%= item.username %></td>
               <td><span class="badge neutral"><%= item.role %></span></td>
+              <td>
+                <% if (item.role === 'driver') { %>
+                  <span class="badge <%= item.driver_type === 'subcontractor' ? 'warning' : 'assigned' %>">
+                    <%= item.driver_type === 'subcontractor' ? 'Sous-traitant' : 'Interne' %>
+                  </span>
+                <% } else { %>
+                  -
+                <% } %>
+              </td>
+              <td>
+                <% if (item.role === 'driver' && assignedVehicle) { %>
+                  <%= assignedVehicle.label %><br />
+                  <span class="muted"><%= assignedVehicle.dimensions_label %> · MMA <%= assignedVehicle.mma_label %></span>
+                <% } else { %>
+                  -
+                <% } %>
+              </td>
               <td><%= item.is_active ? 'Oui' : 'Non' %></td>
 
               <td>
                 <div class="inline-actions">
-
-                  <!-- Activer / Désactiver -->
                   <form action="/dispatch/users/<%= item.id %>/toggle" method="POST" class="inline-form">
                     <button class="btn small" type="submit">
                       <%= item.is_active ? 'Désactiver' : 'Activer' %>
                     </button>
                   </form>
 
-                  <!-- Supprimer -->
                   <form
                     action="/dispatch/users/<%= item.id %>/delete"
                     method="POST"
@@ -85,7 +126,6 @@
                       Supprimer
                     </button>
                   </form>
-
                 </div>
               </td>
             </tr>
@@ -95,5 +135,22 @@
     </div>
   </article>
 </section>
+
+<script>
+  (function () {
+    const roleSelect = document.getElementById('roleSelect');
+    const driverOptions = document.getElementById('driverOptions');
+
+    function refreshDriverOptions() {
+      if (!roleSelect || !driverOptions) return;
+      driverOptions.style.display = roleSelect.value === 'driver' ? '' : 'none';
+    }
+
+    if (roleSelect) {
+      roleSelect.addEventListener('change', refreshDriverOptions);
+      refreshDriverOptions();
+    }
+  })();
+</script>
 
 <%- include('../partials/footer') %>

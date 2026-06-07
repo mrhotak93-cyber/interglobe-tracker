@@ -5,6 +5,9 @@
     <h1><%= tour.reference %></h1>
     <p class="muted">
       Date : <strong><%= tour.date %></strong> · Client : <strong><%= tour.client_name || '-' %></strong>
+      <% if (tour.driver_type === 'subcontractor') { %>
+        · Prix convenu : <strong><%= tour.subcontractor_price_label %></strong>
+      <% } %>
     </p>
   </div>
 </section>
@@ -34,6 +37,9 @@
     <div class="stack">
       <div><strong>Nombre d’arrêts :</strong> <%= totalStops %></div>
       <div><strong>Client :</strong> <%= tour.client_name || '-' %></div>
+      <% if (tour.driver_type === 'subcontractor') { %>
+        <div><strong>Prix convenu :</strong> <%= tour.subcontractor_price_label %></div>
+      <% } %>
       <div><strong>Début :</strong> <%= formatDateTime(tour.started_at) || '-' %></div>
     </div>
 

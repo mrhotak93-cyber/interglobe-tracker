@@ -1,0 +1,106 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="hero">
+  <div>
+    <h1>Récapitulatif mensuel</h1>
+    <p class="muted">Courses sous-traitant et montant à facturer.</p>
+  </div>
+  <div class="inline-actions">
+    <a class="btn" href="/driver">Retour aux tournées</a>
+  </div>
+</section>
+
+<section class="card">
+  <form method="GET" action="/driver/recap" class="grid cols-3">
+    <label>
+      <span>Mois</span>
+      <input type="month" name="month" value="<%= selectedMonth %>" required />
+    </label>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Afficher</button>
+      <a class="btn" href="/driver/recap/export.csv?month=<%= selectedMonth %>">Exporter CSV</a>
+      <a class="btn primary" href="/driver/recap/export.pdf?month=<%= selectedMonth %>">Exporter PDF</a>
+    </div>
+  </form>
+</section>
+
+<section class="stats top-gap">
+  <article class="stat card">
+    <span>Courses du mois</span>
+    <strong><%= recap.totals.allCount %></strong>
+  </article>
+  <article class="stat card">
+    <span>Courses terminées</span>
+    <strong><%= recap.totals.completedCount %></strong>
+  </article>
+  <article class="stat card">
+    <span>En attente / non terminées</span>
+    <strong><%= recap.totals.pendingCount %></strong>
+  </article>
+  <article class="stat card">
+    <span>Montant à facturer</span>
+    <strong><%= recap.totals.totalCompletedAmountLabel %></strong>
+  </article>
+</section>
+
+<section class="card top-gap">
+  <div class="section-header">
+    <div>
+      <h2>Détail des courses</h2>
+      <p class="muted">Le montant à facturer additionne uniquement les tournées terminées : prix convenu + montant d’attente.</p>
+    </div>
+    <span class="badge neutral"><%= selectedMonth %></span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Référence</th>
+          <th>Client</th>
+          <th>Véhicule</th>
+          <th>Statut</th>
+          <th>Km</th>
+          <th>Prix course</th>
+          <th>Attente</th>
+          <th>Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!recap.tours.length) { %>
+          <tr>
+            <td colspan="10" class="muted">Aucune course sous-traitant pour ce mois.</td>
+          </tr>
+        <% } %>
+
+        <% recap.tours.forEach((tour) => { %>
+          <tr>
+            <td><%= tour.date %></td>
+            <td><strong><%= tour.reference %></strong></td>
+            <td><%= tour.client_name || '-' %></td>
+            <td><%= tour.vehicle_label || '-' %></td>
+            <td><span class="badge <%= tour.status %>"><%= tour.status %></span></td>
+            <td><%= tour.km_total || 0 %> km</td>
+            <td><strong><%= tour.subcontractor_price_label %></strong></td>
+            <td><%= tour.waiting_amount_label %></td>
+            <td><strong><%= tour.subcontractor_total_label %></strong></td>
+            <td><a class="btn small" href="/driver/tours/<%= tour.id %>">Ouvrir</a></td>
+          </tr>
+        <% }) %>
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="6">Total à facturer — courses terminées</th>
+          <th></th>
+          <th><%= recap.totals.totalWaitingAmountLabel %></th>
+          <th><%= recap.totals.totalCompletedAmountLabel %></th>
+          <th></th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</section>
+
+<%- include('../partials/footer') %>

@@ -16,10 +16,10 @@
 
     <label>
       <span>Chauffeur</span>
-      <select name="driver_id">
+      <select name="driver_id" id="edit-driver-select">
         <option value="">-- Choisir --</option>
         <% drivers.forEach((driver) => { %>
-          <option value="<%= driver.id %>" <%= Number(tour.driver_id) === Number(driver.id) ? 'selected' : '' %>><%= driver.full_name %></option>
+          <option value="<%= driver.id %>" data-driver-type="<%= driver.driver_type || 'internal' %>" <%= String(tour.driver_id || '') === String(driver.id) ? 'selected' : '' %>><%= driver.full_name %><%= driver.driver_type === 'subcontractor' ? ' · Sous-traitant' : '' %></option>
         <% }) %>
       </select>
     </label>
@@ -29,9 +29,14 @@
       <select name="client_id">
         <option value="">-- Choisir --</option>
         <% clients.forEach((client) => { %>
-          <option value="<%= client.id %>" <%= Number(tour.client_id) === Number(client.id) ? 'selected' : '' %>><%= client.full_name %></option>
+          <option value="<%= client.id %>" <%= String(tour.client_id || '') === String(client.id) ? 'selected' : '' %>><%= client.full_name %></option>
         <% }) %>
       </select>
+    </label>
+
+    <label id="edit-subcontractor-price" style="display:none;">
+      <span>Prix convenu sous-traitant (€)</span>
+      <input type="number" step="0.01" min="0" name="subcontractor_price" value="<%= tour.subcontractor_price || '' %>" />
     </label>
 
     <label>
@@ -55,5 +60,26 @@
     </div>
   </form>
 </section>
+
+
+<script>
+  (function () {
+    const driverSelect = document.getElementById('edit-driver-select');
+    const priceBlock = document.getElementById('edit-subcontractor-price');
+    if (!driverSelect || !priceBlock) return;
+
+    function refreshPriceBlock() {
+      const option = driverSelect.options[driverSelect.selectedIndex];
+      const isSubcontractor = option && option.dataset.driverType === 'subcontractor';
+      priceBlock.style.display = isSubcontractor ? '' : 'none';
+      const input = priceBlock.querySelector('input');
+      if (input) input.required = isSubcontractor;
+      if (input && !isSubcontractor) input.value = '';
+    }
+
+    driverSelect.addEventListener('change', refreshPriceBlock);
+    refreshPriceBlock();
+  })();
+</script>
 
 <%- include('../partials/footer') %>

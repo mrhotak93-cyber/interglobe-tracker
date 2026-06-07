@@ -33,6 +33,47 @@
   </article>
 </section>
 
+<section class="grid cols-4 top-gap">
+  <article class="card stat-card">
+    <div class="stat-label">Type chauffeur</div>
+    <div class="stat-value small-value"><%= tour.driver_type_label || '-' %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Véhicule</div>
+    <div class="stat-value small-value"><%= tour.vehicle_label || '-' %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Prix course</div>
+    <div class="stat-value small-value"><%= tour.driver_type === 'subcontractor' ? tour.subcontractor_price_label : '-' %></div>
+  </article>
+  <article class="card stat-card">
+    <div class="stat-label">Total ST</div>
+    <div class="stat-value small-value"><%= tour.driver_type === 'subcontractor' ? tour.subcontractor_total_label : '-' %></div>
+  </article>
+</section>
+
+<% if (tour.driver_type === 'subcontractor') { %>
+<section class="card top-gap">
+  <div class="section-header">
+    <div>
+      <h2>Montant d’attente</h2>
+      <p class="muted">Ajoute ici le supplément à payer au sous-traitant pour les attentes.</p>
+    </div>
+    <span class="badge neutral">Actuel : <%= tour.waiting_amount_label %></span>
+  </div>
+
+  <form method="POST" action="/dispatch/tours/<%= tour.id %>/waiting-amount" class="grid cols-3">
+    <label>
+      <span>Montant attente (€)</span>
+      <input type="number" step="0.01" min="0" name="waiting_amount" value="<%= Number(tour.waiting_amount || 0) %>" />
+    </label>
+    <div class="form-actions">
+      <button class="btn primary" type="submit">Mettre à jour</button>
+    </div>
+  </form>
+</section>
+<% } %>
+
 <section class="grid cols-3 top-gap">
   <article class="card stat-card">
     <div class="stat-label">Début</div>

@@ -1,0 +1,174 @@
+<%- include('../partials/header', { title, user }) %>
+
+<section class="hero">
+  <div>
+    <h1>Gestion véhicules</h1>
+    <p class="muted">Créer les véhicules avec dimensions utiles, MMA et charge utile.</p>
+  </div>
+  <div class="inline-actions">
+    <a class="btn" href="/dispatch/users">Utilisateurs</a>
+    <a class="btn" href="/dispatch/tours">Tournées</a>
+  </div>
+</section>
+
+<section class="split">
+  <article class="card">
+    <h2>Ajouter un véhicule</h2>
+
+    <form action="/dispatch/vehicles" method="POST" class="grid cols-2">
+      <label>
+        <span>Plaque</span>
+        <input name="plate" placeholder="1-ABC-123" required />
+      </label>
+
+      <label>
+        <span>Statut</span>
+        <select name="status">
+          <option value="available">Disponible</option>
+          <option value="assigned">Assigné</option>
+          <option value="maintenance">Maintenance</option>
+          <option value="inactive">Inactif</option>
+        </select>
+      </label>
+
+      <label>
+        <span>Marque</span>
+        <input name="brand" placeholder="Mercedes" />
+      </label>
+
+      <label>
+        <span>Modèle</span>
+        <input name="model" placeholder="Sprinter" />
+      </label>
+
+      <label>
+        <span>Longueur utile (m)</span>
+        <input name="length_m" type="number" step="0.01" min="0" placeholder="4.30" />
+      </label>
+
+      <label>
+        <span>Largeur utile (m)</span>
+        <input name="width_m" type="number" step="0.01" min="0" placeholder="1.78" />
+      </label>
+
+      <label>
+        <span>Hauteur utile (m)</span>
+        <input name="height_m" type="number" step="0.01" min="0" placeholder="1.94" />
+      </label>
+
+      <label>
+        <span>MMA (kg)</span>
+        <input name="mma_kg" type="number" step="1" min="0" placeholder="3500" />
+      </label>
+
+      <label>
+        <span>Charge utile (kg)</span>
+        <input name="payload_kg" type="number" step="1" min="0" placeholder="1000" />
+      </label>
+
+      <label class="full">
+        <span>Notes</span>
+        <textarea name="notes" rows="3" placeholder="Remarques, équipement, hayon, frigo..."></textarea>
+      </label>
+
+      <div class="form-actions full">
+        <button class="btn primary" type="submit">Créer le véhicule</button>
+      </div>
+    </form>
+  </article>
+
+  <article class="card">
+    <h2>Véhicules existants</h2>
+
+    <% if (!vehicles.length) { %>
+      <p class="muted">Aucun véhicule enregistré.</p>
+    <% } %>
+
+    <div class="stack">
+      <% vehicles.forEach((vehicle) => { %>
+        <article class="card soft">
+          <form action="/dispatch/vehicles/<%= vehicle.id %>/update" method="POST" class="grid cols-2">
+            <label>
+              <span>Plaque</span>
+              <input name="plate" value="<%= vehicle.plate || '' %>" required />
+            </label>
+
+            <label>
+              <span>Statut</span>
+              <select name="status">
+                <option value="available" <%= vehicle.status === 'available' ? 'selected' : '' %>>Disponible</option>
+                <option value="assigned" <%= vehicle.status === 'assigned' ? 'selected' : '' %>>Assigné</option>
+                <option value="maintenance" <%= vehicle.status === 'maintenance' ? 'selected' : '' %>>Maintenance</option>
+                <option value="inactive" <%= vehicle.status === 'inactive' ? 'selected' : '' %>>Inactif</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Marque</span>
+              <input name="brand" value="<%= vehicle.brand || '' %>" />
+            </label>
+
+            <label>
+              <span>Modèle</span>
+              <input name="model" value="<%= vehicle.model || '' %>" />
+            </label>
+
+            <label>
+              <span>Longueur utile (m)</span>
+              <input name="length_m" type="number" step="0.01" min="0" value="<%= vehicle.length_m || '' %>" />
+            </label>
+
+            <label>
+              <span>Largeur utile (m)</span>
+              <input name="width_m" type="number" step="0.01" min="0" value="<%= vehicle.width_m || '' %>" />
+            </label>
+
+            <label>
+              <span>Hauteur utile (m)</span>
+              <input name="height_m" type="number" step="0.01" min="0" value="<%= vehicle.height_m || '' %>" />
+            </label>
+
+            <label>
+              <span>MMA (kg)</span>
+              <input name="mma_kg" type="number" step="1" min="0" value="<%= vehicle.mma_kg || '' %>" />
+            </label>
+
+            <label>
+              <span>Charge utile (kg)</span>
+              <input name="payload_kg" type="number" step="1" min="0" value="<%= vehicle.payload_kg || '' %>" />
+            </label>
+
+            <div>
+              <span class="muted">Volume</span><br />
+              <strong><%= vehicle.volume_m3 ? vehicle.volume_m3 + ' m³' : '-' %></strong>
+            </div>
+
+            <label class="full">
+              <span>Notes</span>
+              <textarea name="notes" rows="2"><%= vehicle.notes || '' %></textarea>
+            </label>
+
+            <div class="full muted">
+              Chauffeur(s) assigné(s) : <strong><%= vehicle.assigned_driver_names || '-' %></strong>
+            </div>
+
+            <div class="form-actions full">
+              <button class="btn primary" type="submit">Enregistrer</button>
+            </div>
+          </form>
+
+          <form
+            action="/dispatch/vehicles/<%= vehicle.id %>/delete"
+            method="POST"
+            class="inline-form"
+            onsubmit="return confirm('Supprimer ce véhicule ? Il sera retiré des profils chauffeurs.');"
+          >
+            <button class="btn danger small" type="submit">Supprimer</button>
+          </form>
+        </article>
+      <% }) %>
+    </div>
+  </article>
+</section>
+
+<%- include('../partials/footer') %>

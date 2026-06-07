@@ -194,6 +194,440 @@ async function fetchAllProfiles() {
   return data || [];
 }
 
+async function fetchProfileById(profileId) {
+  const { data, error } = await admin
+    .from('profiles')
+    .select('*')
+    .eq('id', profileId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+function parseNumberOrNull(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const normalized = String(value).replace(',', '.').trim();
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatMoney(value) {
+  const number = Number(value || 0);
+  return new Intl.NumberFormat('fr-BE', {
+    style: 'currency',
+    currency: 'EUR'
+  }).format(number);
+}
+
+
+function loadPdfKit() {
+  try {
+    return require('pdfkit');
+  } catch (error) {
+    const missing = new Error('PDFKit non installé. Lance: npm install pdfkit');
+    missing.code = 'PDFKIT_MISSING';
+    throw missing;
+  }
+}
+
+function pdfMoney(value) {
+  return `${Number(value || 0).toFixed(2)} EUR`;
+}
+
+function safePdfText(value) {
+  return String(value ?? '')
+    .replace(/€/g, 'EUR')
+    .replace(/[–—]/g, '-')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'");
+}
+
+function setupPdfResponse(res, filename) {
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+}
+
+function addPdfHeader(doc, title, subtitle) {
+  doc.font('Helvetica-Bold').fontSize(18).text(safePdfText(title));
+  if (subtitle) {
+    doc.moveDown(0.25);
+    doc.font('Helvetica').fontSize(10).fillColor('#555555').text(safePdfText(subtitle));
+    doc.fillColor('#000000');
+  }
+  doc.moveDown(1);
+}
+
+function addPdfKeyValue(doc, label, value, x, y, width = 240) {
+  doc.font('Helvetica').fontSize(9).fillColor('#666666').text(safePdfText(label), x, y, { width });
+  doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text(safePdfText(value), x, y + 13, { width });
+}
+
+function ensurePdfSpace(doc, needed = 80) {
+  if (doc.y + needed > doc.page.height - doc.page.margins.bottom) {
+    doc.addPage();
+  }
+}
+
+function addPdfTableHeader(doc, columns) {
+  ensurePdfSpace(doc, 45);
+  const startY = doc.y;
+  doc.rect(doc.page.margins.left, startY - 4, doc.page.width - doc.page.margins.left - doc.page.margins.right, 20).fill('#eeeeee');
+  doc.fillColor('#000000').font('Helvetica-Bold').fontSize(8);
+  columns.forEach((col) => {
+    doc.text(safePdfText(col.label), col.x, startY, { width: col.width, align: col.align || 'left' });
+  });
+  doc.y = startY + 24;
+}
+
+function addPdfTableRow(doc, columns, values) {
+  ensurePdfSpace(doc, 34);
+  const startY = doc.y;
+  doc.font('Helvetica').fontSize(8).fillColor('#000000');
+  columns.forEach((col) => {
+    doc.text(safePdfText(values[col.key] ?? ''), col.x, startY, {
+      width: col.width,
+      align: col.align || 'left'
+    });
+  });
+  doc.moveTo(doc.page.margins.left, startY + 20)
+    .lineTo(doc.page.width - doc.page.margins.right, startY + 20)
+    .strokeColor('#dddddd')
+    .stroke();
+  doc.strokeColor('#000000');
+  doc.y = startY + 26;
+}
+
+function finishPdf(doc) {
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i += 1) {
+    doc.switchToPage(i);
+    doc.font('Helvetica').fontSize(8).fillColor('#777777')
+      .text(`Page ${i + 1} / ${range.count}`, doc.page.margins.left, doc.page.height - 35, {
+        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+        align: 'right'
+      });
+  }
+  doc.end();
+}
+
+function buildDriverMonthlyRecapPdf(res, profile, recap) {
+  const PDFDocument = loadPdfKit();
+  const filename = `recap-${safePdfText(profile.username || profile.full_name || 'chauffeur')}-${recap.month}.pdf`.replace(/[^a-zA-Z0-9._-]/g, '_');
+  setupPdfResponse(res, filename);
+
+  const doc = new PDFDocument({ size: 'A4', margin: 36, bufferPages: true });
+  doc.pipe(res);
+
+  addPdfHeader(doc, 'Récapitulatif mensuel sous-traitant', `Mois: ${recap.month} - Chauffeur: ${profile.full_name || profile.username}`);
+
+  const y = doc.y;
+  addPdfKeyValue(doc, 'Courses du mois', String(recap.totals.allCount), 36, y);
+  addPdfKeyValue(doc, 'Courses terminées', String(recap.totals.completedCount), 190, y);
+  addPdfKeyValue(doc, 'Montant attentes', pdfMoney(recap.totals.totalWaitingAmount), 344, y);
+  doc.y = y + 45;
+  addPdfKeyValue(doc, 'Total à facturer - courses terminées', pdfMoney(recap.totals.totalCompletedAmount), 36, doc.y, 400);
+  doc.moveDown(2);
+
+  const columns = [
+    { key: 'date', label: 'Date', x: 36, width: 55 },
+    { key: 'reference', label: 'Référence', x: 94, width: 78 },
+    { key: 'client', label: 'Client', x: 175, width: 80 },
+    { key: 'status', label: 'Statut', x: 258, width: 56 },
+    { key: 'price', label: 'Prix', x: 318, width: 60, align: 'right' },
+    { key: 'waiting', label: 'Attente', x: 382, width: 60, align: 'right' },
+    { key: 'total', label: 'Total', x: 446, width: 70, align: 'right' }
+  ];
+  addPdfTableHeader(doc, columns);
+
+  recap.tours.forEach((tour) => {
+    addPdfTableRow(doc, columns, {
+      date: tour.date,
+      reference: tour.reference,
+      client: tour.client_name || '-',
+      status: tour.status,
+      price: pdfMoney(tour.subcontractor_price),
+      waiting: pdfMoney(tour.waiting_amount),
+      total: tour.status === 'completed' ? pdfMoney(tour.subcontractor_total) : '-'
+    });
+  });
+
+  doc.moveDown(1);
+  doc.font('Helvetica-Bold').fontSize(11).text(`Total à facturer: ${pdfMoney(recap.totals.totalCompletedAmount)}`, { align: 'right' });
+  doc.font('Helvetica').fontSize(8).fillColor('#555555').text('Le total additionne uniquement les courses terminées: prix convenu + montant d’attente.', { align: 'right' });
+
+  finishPdf(doc);
+}
+
+function buildDispatchSubcontractorRecapPdf(res, recap) {
+  const PDFDocument = loadPdfKit();
+  const filename = `recap-sous-traitants-${recap.month}.pdf`;
+  setupPdfResponse(res, filename);
+
+  const doc = new PDFDocument({ size: 'A4', margin: 36, bufferPages: true });
+  doc.pipe(res);
+
+  addPdfHeader(doc, 'Récapitulatif sous-traitants', `Mois: ${recap.month} - Vue dispatch`);
+
+  const y = doc.y;
+  addPdfKeyValue(doc, 'Courses du mois', String(recap.totals.allCount), 36, y);
+  addPdfKeyValue(doc, 'Courses terminées', String(recap.totals.completedCount), 180, y);
+  addPdfKeyValue(doc, 'Total attentes', pdfMoney(recap.totals.totalWaitingAmount), 324, y);
+  doc.y = y + 45;
+  addPdfKeyValue(doc, 'Total à payer', pdfMoney(recap.totals.totalAmount), 36, doc.y, 250);
+  doc.moveDown(2);
+
+  const columns = [
+    { key: 'date', label: 'Date', x: 36, width: 52 },
+    { key: 'reference', label: 'Référence', x: 90, width: 74 },
+    { key: 'client', label: 'Client', x: 166, width: 72 },
+    { key: 'status', label: 'Statut', x: 240, width: 52 },
+    { key: 'price', label: 'Prix', x: 296, width: 58, align: 'right' },
+    { key: 'waiting', label: 'Attente', x: 358, width: 58, align: 'right' },
+    { key: 'total', label: 'Total', x: 420, width: 75, align: 'right' }
+  ];
+
+  recap.recaps.forEach((item, index) => {
+    if (index > 0) doc.addPage();
+    ensurePdfSpace(doc, 80);
+    doc.font('Helvetica-Bold').fontSize(13).fillColor('#000000').text(safePdfText(item.driver.full_name || item.driver.username));
+    doc.font('Helvetica').fontSize(9).fillColor('#555555').text(
+      safePdfText(`${item.totals.completedCount} terminée(s) - ${item.totals.pendingCount} en attente - Attentes: ${pdfMoney(item.totals.totalWaitingAmount)} - Total: ${pdfMoney(item.totals.totalAmount)}`)
+    );
+    doc.fillColor('#000000').moveDown(0.75);
+
+    addPdfTableHeader(doc, columns);
+    if (!item.tours.length) {
+      doc.font('Helvetica').fontSize(9).text('Aucune course pour ce mois.');
+      doc.moveDown(1);
+    }
+
+    item.tours.forEach((tour) => {
+      addPdfTableRow(doc, columns, {
+        date: tour.date,
+        reference: tour.reference,
+        client: tour.client_name || '-',
+        status: tour.status,
+        price: pdfMoney(tour.subcontractor_price),
+        waiting: pdfMoney(tour.waiting_amount),
+        total: tour.status === 'completed' ? pdfMoney(tour.subcontractor_total) : '-'
+      });
+    });
+
+    doc.moveDown(0.5);
+    doc.font('Helvetica-Bold').fontSize(10).text(`Total ${item.driver.full_name || item.driver.username}: ${pdfMoney(item.totals.totalAmount)}`, { align: 'right' });
+  });
+
+  finishPdf(doc);
+}
+
+
+function currentMonthInput() {
+  const value = today();
+  return value.slice(0, 7);
+}
+
+function normalizeMonthInput(value) {
+  const raw = String(value || '').trim();
+  if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+  return currentMonthInput();
+}
+
+function monthBounds(monthValue) {
+  const month = normalizeMonthInput(monthValue);
+  const startDate = `${month}-01`;
+  const d = new Date(`${startDate}T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  const endDateExclusive = d.toISOString().slice(0, 10);
+  return { month, startDate, endDateExclusive };
+}
+
+async function fetchDriverMonthlyRecap(driverProfileId, monthValue) {
+  const { month, startDate, endDateExclusive } = monthBounds(monthValue);
+
+  const { data: rows, error } = await admin
+    .from('tours')
+    .select('*')
+    .eq('assigned_driver_profile_id', driverProfileId)
+    .eq('driver_type', 'subcontractor')
+    .gte('tour_date', startDate)
+    .lt('tour_date', endDateExclusive)
+    .order('tour_date', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  const profilesMap = await fetchProfilesMap();
+  const vehiclesMap = await fetchVehiclesMap();
+  const tours = (rows || []).map((row) => normalizeTour(row, profilesMap, vehiclesMap));
+  const completedTours = tours.filter((tour) => tour.status === 'completed');
+  const pendingTours = tours.filter((tour) => tour.status !== 'completed');
+  const totalCompletedAmount = completedTours.reduce(
+    (sum, tour) => sum + Number(tour.subcontractor_total || 0),
+    0
+  );
+  const totalPlannedAmount = tours.reduce((sum, tour) => sum + Number(tour.subcontractor_total || 0), 0);
+  const totalWaitingAmount = completedTours.reduce((sum, tour) => sum + Number(tour.waiting_amount || 0), 0);
+
+  return {
+    month,
+    startDate,
+    endDateExclusive,
+    tours,
+    completedTours,
+    pendingTours,
+    totals: {
+      allCount: tours.length,
+      completedCount: completedTours.length,
+      pendingCount: pendingTours.length,
+      totalCompletedAmount,
+      totalCompletedAmountLabel: formatMoney(totalCompletedAmount),
+      totalWaitingAmount,
+      totalWaitingAmountLabel: formatMoney(totalWaitingAmount),
+      totalPlannedAmount,
+      totalPlannedAmountLabel: formatMoney(totalPlannedAmount)
+    }
+  };
+}
+
+
+async function fetchSubcontractorMonthlyRecaps(monthValue) {
+  const { month, startDate, endDateExclusive } = monthBounds(monthValue);
+
+  const profiles = await fetchAllProfiles();
+  const subcontractors = profiles.filter(
+    (profile) => profile.role === 'driver' && profile.driver_type === 'subcontractor'
+  );
+
+  const { data: rows, error } = await admin
+    .from('tours')
+    .select('*')
+    .eq('driver_type', 'subcontractor')
+    .gte('tour_date', startDate)
+    .lt('tour_date', endDateExclusive)
+    .order('tour_date', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  const profilesMap = profiles.reduce((acc, item) => {
+    acc[item.id] = item;
+    return acc;
+  }, {});
+  const vehiclesMap = await fetchVehiclesMap();
+  const tours = (rows || []).map((row) => normalizeTour(row, profilesMap, vehiclesMap));
+
+  const recaps = subcontractors.map((driver) => {
+    const driverTours = tours.filter((tour) => tour.driver_id === driver.id);
+    const completedTours = driverTours.filter((tour) => tour.status === 'completed');
+    const pendingTours = driverTours.filter((tour) => tour.status !== 'completed');
+    const totalBaseAmount = completedTours.reduce((sum, tour) => sum + Number(tour.subcontractor_price || 0), 0);
+    const totalWaitingAmount = completedTours.reduce((sum, tour) => sum + Number(tour.waiting_amount || 0), 0);
+    const totalAmount = totalBaseAmount + totalWaitingAmount;
+
+    return {
+      driver,
+      tours: driverTours,
+      completedTours,
+      pendingTours,
+      totals: {
+        allCount: driverTours.length,
+        completedCount: completedTours.length,
+        pendingCount: pendingTours.length,
+        totalBaseAmount,
+        totalBaseAmountLabel: formatMoney(totalBaseAmount),
+        totalWaitingAmount,
+        totalWaitingAmountLabel: formatMoney(totalWaitingAmount),
+        totalAmount,
+        totalAmountLabel: formatMoney(totalAmount)
+      }
+    };
+  });
+
+  const globalTotals = recaps.reduce(
+    (acc, recap) => {
+      acc.allCount += recap.totals.allCount;
+      acc.completedCount += recap.totals.completedCount;
+      acc.pendingCount += recap.totals.pendingCount;
+      acc.totalBaseAmount += recap.totals.totalBaseAmount;
+      acc.totalWaitingAmount += recap.totals.totalWaitingAmount;
+      acc.totalAmount += recap.totals.totalAmount;
+      return acc;
+    },
+    { allCount: 0, completedCount: 0, pendingCount: 0, totalBaseAmount: 0, totalWaitingAmount: 0, totalAmount: 0 }
+  );
+
+  return {
+    month,
+    startDate,
+    endDateExclusive,
+    recaps,
+    tours,
+    totals: {
+      ...globalTotals,
+      totalBaseAmountLabel: formatMoney(globalTotals.totalBaseAmount),
+      totalWaitingAmountLabel: formatMoney(globalTotals.totalWaitingAmount),
+      totalAmountLabel: formatMoney(globalTotals.totalAmount)
+    }
+  };
+}
+
+function normalizeVehicle(row) {
+  if (!row) return null;
+  const length = Number(row.length_m || 0);
+  const width = Number(row.width_m || 0);
+  const height = Number(row.height_m || 0);
+  const volume = length && width && height ? Number((length * width * height).toFixed(2)) : null;
+
+  return {
+    ...row,
+    label: [row.plate, row.brand, row.model].filter(Boolean).join(' · '),
+    dimensions_label:
+      length || width || height
+        ? `L ${length || '-'} m × l ${width || '-'} m × H ${height || '-'} m`
+        : '-',
+    volume_m3: volume,
+    mma_label: row.mma_kg ? `${row.mma_kg} kg` : '-'
+  };
+}
+
+async function fetchAllVehicles() {
+  const { data, error } = await admin
+    .from('vehicles')
+    .select('*')
+    .order('plate', { ascending: true });
+
+  if (error) {
+    console.warn('[VEHICLES] table indisponible ou requête impossible:', error.message);
+    return [];
+  }
+
+  return (data || []).map(normalizeVehicle);
+}
+
+async function fetchVehiclesMap() {
+  const vehicles = await fetchAllVehicles();
+  return vehicles.reduce((acc, item) => {
+    acc[item.id] = item;
+    return acc;
+  }, {});
+}
+
+async function getDriverAssignmentInfo(driverId) {
+  if (!driverId) {
+    return { driver_type: 'internal', vehicle_id: null, subcontractor_price: 0 };
+  }
+
+  const { data: driver, error } = await admin
+    .from('profiles')
+    .select('id, driver_type, vehicle_id')
+    .eq('id', driverId)
+    .maybeSingle();
+  if (error) throw error;
+
+  return {
+    driver_type: driver?.driver_type === 'subcontractor' ? 'subcontractor' : 'internal',
+    vehicle_id: driver?.vehicle_id || null
+  };
+}
+
 async function getProfileByUsername(username) {
   const { data, error } = await admin
     .from('profiles')
@@ -204,9 +638,14 @@ async function getProfileByUsername(username) {
   return data;
 }
 
-function normalizeTour(row, profilesMap) {
+function normalizeTour(row, profilesMap, vehiclesMap = {}) {
   const driver = profilesMap[row.assigned_driver_profile_id] || null;
   const client = profilesMap[row.client_profile_id] || null;
+  const vehicle = vehiclesMap[row.vehicle_id || driver?.vehicle_id] || null;
+  const driverType = row.driver_type || driver?.driver_type || 'internal';
+  const subcontractorPrice = Number(row.subcontractor_price || 0);
+  const waitingAmount = Number(row.waiting_amount || 0);
+  const subcontractorTotal = subcontractorPrice + waitingAmount;
 
   return {
     ...row,
@@ -216,7 +655,18 @@ function normalizeTour(row, profilesMap) {
     client_id: row.client_profile_id,
     driver_name: driver ? driver.full_name : null,
     driver_phone: driver ? driver.phone : null,
+    driver_type: driverType,
+    driver_type_label: driverType === 'subcontractor' ? 'Sous-traitant' : 'Interne',
     client_name: client ? client.full_name : null,
+    vehicle_id: row.vehicle_id || driver?.vehicle_id || null,
+    vehicle,
+    vehicle_label: vehicle ? vehicle.label : '-',
+    subcontractor_price: subcontractorPrice,
+    subcontractor_price_label: formatMoney(subcontractorPrice),
+    waiting_amount: waitingAmount,
+    waiting_amount_label: formatMoney(waitingAmount),
+    subcontractor_total: subcontractorTotal,
+    subcontractor_total_label: formatMoney(subcontractorTotal),
     started_at: row.started_at,
     completed_at: row.ended_at,
     km_total: Number(row.total_km || 0)
@@ -258,7 +708,8 @@ async function fetchTours(where = {}, options = {}) {
   if (error) throw error;
 
   const profilesMap = await fetchProfilesMap();
-  return (data || []).map((row) => normalizeTour(row, profilesMap));
+  const vehiclesMap = await fetchVehiclesMap();
+  return (data || []).map((row) => normalizeTour(row, profilesMap, vehiclesMap));
 }
 
 async function fetchTourById(tourId) {
@@ -267,7 +718,8 @@ async function fetchTourById(tourId) {
   if (!data) return null;
 
   const profilesMap = await fetchProfilesMap();
-  const tour = normalizeTour(data, profilesMap);
+  const vehiclesMap = await fetchVehiclesMap();
+  const tour = normalizeTour(data, profilesMap, vehiclesMap);
 
   const { data: stopsRaw, error: stopsError } = await admin
     .from('tour_stops')
@@ -374,6 +826,9 @@ async function cloneTourWithStops(sourceTour, targetDate, createdByProfileId, te
     tour_date: targetDate,
     client_profile_id: sourceTour.client_id || null,
     assigned_driver_profile_id: sourceTour.driver_id || null,
+    driver_type: sourceTour.driver_type || 'internal',
+    vehicle_id: sourceTour.vehicle_id || null,
+    subcontractor_price: sourceTour.driver_type === 'subcontractor' ? Number(sourceTour.subcontractor_price || 0) : 0,
     status: 'assigned',
     notes: sourceTour.notes || null,
     created_by_profile_id: createdByProfileId || null
@@ -616,6 +1071,7 @@ app.use((req, res, next) => {
   res.locals.flash = req.session.flash || '';
   delete req.session.flash;
   res.locals.formatDateTime = formatDateTime;
+  res.locals.formatMoney = formatMoney;
   res.locals.today = today;
   next();
 });
@@ -728,7 +1184,8 @@ app.get('/dispatch', requireRole('dispatch'), async (req, res) => {
 app.get('/dispatch/users', requireRole('dispatch'), async (req, res) => {
   try {
     const users = await fetchAllProfiles();
-    res.render('dispatch/users', { title: 'Utilisateurs', users });
+    const vehicles = await fetchAllVehicles();
+    res.render('dispatch/users', { title: 'Utilisateurs', users, vehicles });
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur utilisateurs');
@@ -743,6 +1200,8 @@ app.post('/dispatch/users', requireRole('dispatch'), async (req, res) => {
     const role = String(req.body.role || 'driver');
     const phone = String(req.body.phone || '').trim() || null;
     const company = String(req.body.company || 'InterGlobe').trim() || 'InterGlobe';
+    const driverType = req.body.driver_type === 'subcontractor' ? 'subcontractor' : 'internal';
+    const vehicleId = req.body.vehicle_id || null;
     const isActive = Boolean(req.body.active);
 
     if (!username || !fullName || !password || !role) {
@@ -759,7 +1218,7 @@ app.post('/dispatch/users', requireRole('dispatch'), async (req, res) => {
     });
     if (createUserError) throw createUserError;
 
-    const { error: profileError } = await admin.from('profiles').insert({
+    const profilePayload = {
       auth_user_id: createdUser.user.id,
       username,
       full_name: fullName,
@@ -769,7 +1228,14 @@ app.post('/dispatch/users', requireRole('dispatch'), async (req, res) => {
       is_active: isActive,
       must_change_password: false,
       created_by_profile_id: req.session.user.profile_id
-    });
+    };
+
+    if (role === 'driver') {
+      profilePayload.driver_type = driverType;
+      profilePayload.vehicle_id = vehicleId;
+    }
+
+    const { error: profileError } = await admin.from('profiles').insert(profilePayload);
     if (profileError) throw profileError;
 
     flash(req, 'Utilisateur créé.');
@@ -865,6 +1331,212 @@ app.post('/dispatch/users/:id/delete', requireRole('dispatch'), async (req, res)
   }
 });
 
+
+app.get('/dispatch/vehicles', requireRole('dispatch'), async (req, res) => {
+  try {
+    const vehicles = await fetchAllVehicles();
+    const profiles = await fetchAllProfiles();
+    const drivers = profiles.filter((item) => item.role === 'driver');
+
+    const vehiclesWithDrivers = vehicles.map((vehicle) => {
+      const assignedDrivers = drivers.filter((driver) => String(driver.vehicle_id || '') === String(vehicle.id));
+      return {
+        ...vehicle,
+        assigned_drivers: assignedDrivers,
+        assigned_driver_names: assignedDrivers.map((driver) => driver.full_name).join(', ')
+      };
+    });
+
+    res.render('dispatch/vehicles', {
+      title: 'Véhicules',
+      vehicles: vehiclesWithDrivers,
+      drivers
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Erreur véhicules');
+  }
+});
+
+app.post('/dispatch/vehicles', requireRole('dispatch'), async (req, res) => {
+  try {
+    const plate = String(req.body.plate || '').trim().toUpperCase();
+    const brand = String(req.body.brand || '').trim() || null;
+    const model = String(req.body.model || '').trim() || null;
+
+    if (!plate) {
+      flash(req, 'La plaque est obligatoire.');
+      return res.redirect('/dispatch/vehicles');
+    }
+
+    const payload = {
+      plate,
+      brand,
+      model,
+      length_m: parseNumberOrNull(req.body.length_m),
+      width_m: parseNumberOrNull(req.body.width_m),
+      height_m: parseNumberOrNull(req.body.height_m),
+      mma_kg: parseNumberOrNull(req.body.mma_kg),
+      payload_kg: parseNumberOrNull(req.body.payload_kg),
+      status: req.body.status || 'available',
+      notes: String(req.body.notes || '').trim() || null
+    };
+
+    const { error } = await admin.from('vehicles').insert(payload);
+    if (error) throw error;
+
+    flash(req, 'Véhicule créé.');
+    res.redirect('/dispatch/vehicles');
+  } catch (error) {
+    console.error(error);
+    flash(req, `Erreur création véhicule : ${error.message}`);
+    res.redirect('/dispatch/vehicles');
+  }
+});
+
+app.post('/dispatch/vehicles/:id/update', requireRole('dispatch'), async (req, res) => {
+  try {
+    const plate = String(req.body.plate || '').trim().toUpperCase();
+
+    if (!plate) {
+      flash(req, 'La plaque est obligatoire.');
+      return res.redirect('/dispatch/vehicles');
+    }
+
+    const payload = {
+      plate,
+      brand: String(req.body.brand || '').trim() || null,
+      model: String(req.body.model || '').trim() || null,
+      length_m: parseNumberOrNull(req.body.length_m),
+      width_m: parseNumberOrNull(req.body.width_m),
+      height_m: parseNumberOrNull(req.body.height_m),
+      mma_kg: parseNumberOrNull(req.body.mma_kg),
+      payload_kg: parseNumberOrNull(req.body.payload_kg),
+      status: req.body.status || 'available',
+      notes: String(req.body.notes || '').trim() || null
+    };
+
+    const { error } = await admin.from('vehicles').update(payload).eq('id', req.params.id);
+    if (error) throw error;
+
+    flash(req, 'Véhicule mis à jour.');
+    res.redirect('/dispatch/vehicles');
+  } catch (error) {
+    console.error(error);
+    flash(req, `Erreur modification véhicule : ${error.message}`);
+    res.redirect('/dispatch/vehicles');
+  }
+});
+
+app.post('/dispatch/vehicles/:id/delete', requireRole('dispatch'), async (req, res) => {
+  try {
+    const vehicleId = req.params.id;
+
+    const { error: profilesError } = await admin
+      .from('profiles')
+      .update({ vehicle_id: null })
+      .eq('vehicle_id', vehicleId);
+    if (profilesError) throw profilesError;
+
+    const { error: toursError } = await admin
+      .from('tours')
+      .update({ vehicle_id: null })
+      .eq('vehicle_id', vehicleId);
+    if (toursError && !String(toursError.message || '').includes('vehicle_id')) throw toursError;
+
+    const { error } = await admin.from('vehicles').delete().eq('id', vehicleId);
+    if (error) throw error;
+
+    flash(req, 'Véhicule supprimé.');
+    res.redirect('/dispatch/vehicles');
+  } catch (error) {
+    console.error(error);
+    flash(req, `Erreur suppression véhicule : ${error.message}`);
+    res.redirect('/dispatch/vehicles');
+  }
+});
+
+app.get('/dispatch/subcontractors/recap', requireRole('dispatch'), async (req, res) => {
+  try {
+    const recap = await fetchSubcontractorMonthlyRecaps(req.query.month);
+
+    res.render('dispatch/subcontractor_recaps', {
+      title: 'Récapitulatif sous-traitants',
+      recap,
+      selectedMonth: recap.month
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Erreur récapitulatif sous-traitants');
+  }
+});
+
+app.get('/dispatch/subcontractors/recap/export.csv', requireRole('dispatch'), async (req, res) => {
+  try {
+    const recap = await fetchSubcontractorMonthlyRecaps(req.query.month);
+    const csv = stringify(
+      recap.tours.map((tour) => ({
+        mois: recap.month,
+        chauffeur: tour.driver_name || '',
+        date: tour.date,
+        reference: tour.reference,
+        client: tour.client_name || '',
+        vehicle: tour.vehicle_label || '',
+        status: tour.status,
+        prix_course: Number(tour.subcontractor_price || 0),
+        montant_attente: Number(tour.waiting_amount || 0),
+        total_a_facturer: Number(tour.subcontractor_total || 0),
+        notes: tour.notes || ''
+      })),
+      { header: true }
+    );
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="recap-sous-traitants-${recap.month}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Erreur export récapitulatif sous-traitants');
+  }
+});
+
+
+app.get('/dispatch/subcontractors/recap/export.pdf', requireRole('dispatch'), async (req, res) => {
+  try {
+    const recap = await fetchSubcontractorMonthlyRecaps(req.query.month);
+    buildDispatchSubcontractorRecapPdf(res, recap);
+  } catch (error) {
+    console.error(error);
+    if (error.code === 'PDFKIT_MISSING') {
+      return res.status(500).send(error.message);
+    }
+    return res.status(500).send('Erreur export PDF récapitulatif sous-traitants');
+  }
+});
+
+app.post('/dispatch/tours/:id/waiting-amount', requireRole('dispatch'), async (req, res) => {
+  try {
+    const waitingAmount = Number(parseNumberOrNull(req.body.waiting_amount) || 0);
+    if (waitingAmount < 0) {
+      flash(req, 'Le montant d’attente ne peut pas être négatif.');
+      return res.redirect(req.get('referer') || `/dispatch/tours/${req.params.id}`);
+    }
+
+    const { error } = await admin
+      .from('tours')
+      .update({ waiting_amount: waitingAmount })
+      .eq('id', req.params.id);
+    if (error) throw error;
+
+    flash(req, 'Montant d’attente mis à jour.');
+    res.redirect(req.get('referer') || `/dispatch/tours/${req.params.id}`);
+  } catch (error) {
+    console.error(error);
+    flash(req, `Erreur montant d’attente : ${error.message}`);
+    res.redirect(req.get('referer') || '/dispatch/tours');
+  }
+});
+
 app.get('/dispatch/tours', requireRole('dispatch'), async (req, res) => {
   try {
     const filters = {
@@ -948,7 +1620,12 @@ app.get('/dispatch/tours/export.csv', requireRole('dispatch'), async (req, res) 
         reference: tour.reference,
         date: tour.date,
         driver: tour.driver_name || '',
+        driver_type: tour.driver_type_label || '',
+        vehicle: tour.vehicle_label || '',
         client: tour.client_name || '',
+        subcontractor_price: tour.driver_type === 'subcontractor' ? Number(tour.subcontractor_price || 0) : '',
+        waiting_amount: tour.driver_type === 'subcontractor' ? Number(tour.waiting_amount || 0) : '',
+        subcontractor_total: tour.driver_type === 'subcontractor' ? Number(tour.subcontractor_total || 0) : '',
         status: tour.status,
         started_at: tour.started_at || '',
         completed_at: tour.completed_at || '',
@@ -969,16 +1646,31 @@ app.get('/dispatch/tours/export.csv', requireRole('dispatch'), async (req, res) 
 
 app.post('/dispatch/tours', requireRole('dispatch'), async (req, res) => {
   try {
+    const driverId = req.body.driver_id || null;
+    const assignment = await getDriverAssignmentInfo(driverId);
+    const subcontractorPrice = assignment.driver_type === 'subcontractor'
+      ? Number(parseNumberOrNull(req.body.subcontractor_price) || 0)
+      : 0;
+
     const payload = {
       reference_code: String(req.body.reference || '').trim(),
       title: String(req.body.reference || '').trim() || 'Tournée',
       tour_date: req.body.date,
-      assigned_driver_profile_id: req.body.driver_id || null,
+      assigned_driver_profile_id: driverId,
       client_profile_id: req.body.client_id || null,
+      driver_type: assignment.driver_type,
+      vehicle_id: assignment.vehicle_id,
+      subcontractor_price: subcontractorPrice,
+      waiting_amount: 0,
       status: 'assigned',
       notes: String(req.body.notes || '').trim() || null,
       created_by_profile_id: req.session.user.profile_id
     };
+
+    if (assignment.driver_type === 'subcontractor' && subcontractorPrice <= 0) {
+      flash(req, 'Indique le prix convenu pour le sous-traitant.');
+      return res.redirect('/dispatch/tours');
+    }
 
     const { error } = await admin.from('tours').insert(payload);
     if (error) throw error;
@@ -1171,14 +1863,28 @@ app.get('/dispatch/tours/:id/edit', requireRole('dispatch'), async (req, res) =>
 
 app.post('/dispatch/tours/:id/edit', requireRole('dispatch'), async (req, res) => {
   try {
+    const driverId = req.body.driver_id || null;
+    const assignment = await getDriverAssignmentInfo(driverId);
+    const subcontractorPrice = assignment.driver_type === 'subcontractor'
+      ? Number(parseNumberOrNull(req.body.subcontractor_price) || 0)
+      : 0;
+
+    if (assignment.driver_type === 'subcontractor' && subcontractorPrice <= 0) {
+      flash(req, 'Indique le prix convenu pour le sous-traitant.');
+      return res.redirect(`/dispatch/tours/${req.params.id}/edit`);
+    }
+
     const { error } = await admin
       .from('tours')
       .update({
         reference_code: String(req.body.reference || '').trim(),
         title: String(req.body.reference || '').trim() || 'Tournée',
         tour_date: req.body.date,
-        assigned_driver_profile_id: req.body.driver_id || null,
+        assigned_driver_profile_id: driverId,
         client_profile_id: req.body.client_id || null,
+        driver_type: assignment.driver_type,
+        vehicle_id: assignment.vehicle_id,
+        subcontractor_price: subcontractorPrice,
         status: req.body.status || 'draft',
         notes: String(req.body.notes || '').trim() || null,
         ended_at: req.body.status === 'completed' ? nowIso() : null
@@ -1413,10 +2119,72 @@ app.post('/dispatch/recurrences/:id/generate', requireRole('dispatch'), async (r
 app.get('/driver', requireRole('driver'), async (req, res) => {
   try {
     const tours = await fetchTours({ assigned_driver_profile_id: req.session.user.profile_id });
-    res.render('driver/dashboard', { title: 'Mes tournées', tours });
+    const profile = await fetchProfileById(req.session.user.profile_id);
+    const currentMonth = currentMonthInput();
+
+    res.render('driver/dashboard', {
+      title: 'Mes tournées',
+      tours,
+      profile,
+      currentMonth
+    });
   } catch (error) {
     console.error(error);
     res.status(500).send('Erreur tournée chauffeur');
+  }
+});
+
+app.get('/driver/recap', requireRole('driver'), async (req, res) => {
+  try {
+    const profile = await fetchProfileById(req.session.user.profile_id);
+    if (!profile || profile.driver_type !== 'subcontractor') {
+      return res.status(403).send('Récapitulatif disponible uniquement pour les sous-traitants.');
+    }
+
+    const recap = await fetchDriverMonthlyRecap(req.session.user.profile_id, req.query.month);
+
+    res.render('driver/monthly_recap', {
+      title: 'Récapitulatif mensuel',
+      profile,
+      recap,
+      selectedMonth: recap.month
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Erreur récapitulatif mensuel');
+  }
+});
+
+app.get('/driver/recap/export.csv', requireRole('driver'), async (req, res) => {
+  try {
+    const profile = await fetchProfileById(req.session.user.profile_id);
+    if (!profile || profile.driver_type !== 'subcontractor') {
+      return res.status(403).send('Export disponible uniquement pour les sous-traitants.');
+    }
+
+    const recap = await fetchDriverMonthlyRecap(req.session.user.profile_id, req.query.month);
+    const csv = stringify(
+      recap.tours.map((tour) => ({
+        date: tour.date,
+        reference: tour.reference,
+        client: tour.client_name || '',
+        vehicle: tour.vehicle_label || '',
+        status: tour.status,
+        km: tour.km_total || 0,
+        prix_convenu: Number(tour.subcontractor_price || 0),
+        montant_attente: Number(tour.waiting_amount || 0),
+        total_a_facturer: Number(tour.subcontractor_total || 0),
+        notes: tour.notes || ''
+      })),
+      { header: true }
+    );
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="recap-${recap.month}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send('Erreur export récapitulatif');
   }
 });
 
@@ -1647,6 +2415,25 @@ app.post('/driver/tours/:id/location', requireRole('driver'), async (req, res) =
   } catch (error) {
     console.error(error);
     res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+
+app.get('/driver/recap/export.pdf', requireRole('driver'), async (req, res) => {
+  try {
+    const profile = await fetchProfileById(req.session.user.profile_id);
+    if (!profile || profile.driver_type !== 'subcontractor') {
+      return res.status(403).send('Export PDF disponible uniquement pour les sous-traitants.');
+    }
+
+    const recap = await fetchDriverMonthlyRecap(req.session.user.profile_id, req.query.month);
+    buildDriverMonthlyRecapPdf(res, profile, recap);
+  } catch (error) {
+    console.error(error);
+    if (error.code === 'PDFKIT_MISSING') {
+      return res.status(500).send(error.message);
+    }
+    return res.status(500).send('Erreur export PDF récapitulatif');
   }
 });
 

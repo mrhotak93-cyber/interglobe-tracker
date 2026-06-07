@@ -5,15 +5,29 @@
     <h1>Mes tournées</h1>
     <p class="muted">Interface terrain simple : naviguer, arrivé, preuve, départ.</p>
   </div>
+  <% if (profile && profile.driver_type === 'subcontractor') { %>
+    <div class="inline-actions">
+      <a class="btn primary" href="/driver/recap?month=<%= currentMonth %>">Voir mon récapitulatif mensuel</a>
+    </div>
+  <% } %>
 </section>
 
 <section class="stack">
+  <% if (!tours.length) { %>
+    <article class="card">
+      <p class="muted">Aucune tournée assignée pour le moment.</p>
+    </article>
+  <% } %>
+
   <% tours.forEach((tour) => { %>
     <article class="card">
       <div class="section-header">
         <div>
           <h2><%= tour.reference %></h2>
           <div class="muted">Date : <%= tour.date %> · Client : <%= tour.client_name || '-' %></div>
+          <% if (tour.driver_type === 'subcontractor') { %>
+            <div class="muted">Prix convenu : <strong><%= tour.subcontractor_price_label %></strong></div>
+          <% } %>
         </div>
         <span class="badge <%= tour.status %>"><%= tour.status %></span>
       </div>
