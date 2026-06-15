@@ -881,6 +881,10 @@ async function createTemplateFromTour(sourceTourId, form, createdByProfileId) {
       description: sourceTour.reference,
       client_profile_id: sourceTour.client_id || null,
       assigned_driver_profile_id: sourceTour.driver_id || null,
+      driver_type: sourceTour.driver_type || 'internal',
+      vehicle_id: sourceTour.vehicle_id || null,
+      subcontractor_price:
+        sourceTour.driver_type === 'subcontractor' ? Number(sourceTour.subcontractor_price || 0) : 0,
       recurrence,
       recurrence_weekdays: recurrenceWeekdays,
       recurrence_start_date: form.start_date,
@@ -952,6 +956,28 @@ async function generateToursFromTemplate(templateId, rangeStart, rangeEnd, creat
     templateMatchesDate(template, dateStr)
   );
 
+  const assignment = await getDriverAssignmentInfo(template.assigned_driver_profile_id);
+  const templateDriverType =
+    template.driver_type || assignment.driver_type || 'internal';
+  const templateVehicleId =
+    template.vehicle_id || assignment.vehicle_id || null;
+
+  let templateSubcontractorPrice =
+    templateDriverType === 'subcontractor' ? Number(template.subcontractor_price || 0) : 0;
+
+  if (templateDriverType === 'subcontractor' && templateSubcontractorPrice <= 0) {
+    const { data: previousPricedTour, error: previousPricedTourError } = await admin
+      .from('tours')
+      .select('subcontractor_price')
+      .eq('template_id', template.id)
+      .gt('subcontractor_price', 0)
+      .order('tour_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (previousPricedTourError) throw previousPricedTourError;
+    templateSubcontractorPrice = Number(previousPricedTour?.subcontractor_price || 0);
+  }
+
   let createdCount = 0;
 
   for (const dateStr of generatedDates) {
@@ -974,6 +1000,11 @@ async function generateToursFromTemplate(templateId, rangeStart, rangeEnd, creat
         tour_date: dateStr,
         client_profile_id: template.client_profile_id || null,
         assigned_driver_profile_id: template.assigned_driver_profile_id || null,
+        driver_type: templateDriverType,
+        vehicle_id: templateVehicleId,
+        subcontractor_price:
+          templateDriverType === 'subcontractor' ? Number(templateSubcontractorPrice || 0) : 0,
+        waiting_amount: 0,
         status: 'assigned',
         notes: `Généré depuis récurrence ${template.name}`,
         created_by_profile_id: createdByProfileId || null
