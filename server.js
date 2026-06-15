@@ -981,21 +981,32 @@ async function generateToursFromTemplate(templateId, rangeStart, rangeEnd, creat
   let createdCount = 0;
 
   for (const dateStr of generatedDates) {
-    const { data: existing, error: existingError } = await admin
+    const referenceCode = `${template.name}-${dateStr}`;
+
+    const { data: existingForTemplate, error: existingForTemplateError } = await admin
       .from('tours')
       .select('id')
       .eq('template_id', template.id)
       .eq('tour_date', dateStr)
       .limit(1)
       .maybeSingle();
-    if (existingError) throw existingError;
-    if (existing) continue;
+    if (existingForTemplateError) throw existingForTemplateError;
+    if (existingForTemplate) continue;
+
+    const { data: existingReference, error: existingReferenceError } = await admin
+      .from('tours')
+      .select('id')
+      .eq('reference_code', referenceCode)
+      .limit(1)
+      .maybeSingle();
+    if (existingReferenceError) throw existingReferenceError;
+    if (existingReference) continue;
 
     const { data: newTour, error: newTourError } = await admin
       .from('tours')
       .insert({
         template_id: template.id,
-        reference_code: `${template.name}-${dateStr}`,
+        reference_code: referenceCode,
         title: template.name,
         tour_date: dateStr,
         client_profile_id: template.client_profile_id || null,
