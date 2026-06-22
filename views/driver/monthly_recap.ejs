@@ -3,7 +3,7 @@
 <section class="hero">
   <div>
     <h1>Récapitulatif mensuel</h1>
-    <p class="muted">Courses sous-traitant et montant à facturer.</p>
+    <p class="muted">Courses sous-traitant et montant à facturer HTVA.</p>
   </div>
   <div class="inline-actions">
     <a class="btn" href="/driver">Retour aux tournées</a>
@@ -24,6 +24,26 @@
   </form>
 </section>
 
+<section class="card top-gap">
+  <div class="section-header">
+    <div>
+      <h2>Coordonnées de facturation</h2>
+      <p class="muted">Ces informations doivent apparaître sur la facture du sous-traitant.</p>
+    </div>
+    <span class="badge neutral">Montants HTVA</span>
+  </div>
+
+  <div class="invoice-info">
+    <p><strong>Facturer à</strong></p>
+    <p>InterGlobe BV</p>
+    <p>Leuvensesteenweg 270</p>
+    <p>1932 Zaventem, Belgique</p>
+    <p>TVA : BE0559.998.717</p>
+    <p>Email : <a href="mailto:info@interglobe.be">info@interglobe.be</a></p>
+    <p class="muted"><strong>Important :</strong> tous les montants affichés dans ce récapitulatif sont HTVA.</p>
+  </div>
+</section>
+
 <section class="stats top-gap">
   <article class="stat card">
     <span>Courses du mois</span>
@@ -38,7 +58,7 @@
     <strong><%= recap.totals.pendingCount %></strong>
   </article>
   <article class="stat card">
-    <span>Montant à facturer</span>
+    <span>Montant à facturer HTVA</span>
     <strong><%= recap.totals.totalCompletedAmountLabel %></strong>
   </article>
 </section>
@@ -47,7 +67,7 @@
   <div class="section-header">
     <div>
       <h2>Détail des courses</h2>
-      <p class="muted">Le montant à facturer additionne uniquement les tournées terminées : prix convenu + montant d’attente.</p>
+      <p class="muted">Le montant à facturer est HTVA et additionne uniquement les tournées terminées : prix convenu + montant d’attente.</p>
     </div>
     <span class="badge neutral"><%= selectedMonth %></span>
   </div>
@@ -92,7 +112,7 @@
       </tbody>
       <tfoot>
         <tr>
-          <th colspan="6">Total à facturer — courses terminées</th>
+          <th colspan="6">Total à facturer HTVA — courses terminées</th>
           <th></th>
           <th><%= recap.totals.totalWaitingAmountLabel %></th>
           <th><%= recap.totals.totalCompletedAmountLabel %></th>

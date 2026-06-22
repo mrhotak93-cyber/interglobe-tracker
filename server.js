@@ -19,6 +19,14 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'interglobe-session-secret-
 const PROOF_BUCKET = 'proof-photos';
 const DEFAULT_GPS_STALE_MINUTES = Number(process.env.GPS_STALE_MINUTES || 30);
 const STOP_OVERDUE_MINUTES = Number(process.env.STOP_OVERDUE_MINUTES || 90);
+const ARRIVAL_GEOFENCE_RADIUS_KM = Number(process.env.ARRIVAL_GEOFENCE_RADIUS_KM || 0.5);
+const INTERGLOBE_BILLING_INFO = {
+  name: 'InterGlobe BV',
+  address1: 'Leuvensesteenweg 270',
+  address2: '1932 Zaventem, Belgique',
+  vat: 'BE0559.998.717',
+  email: 'info@interglobe.be'
+};
 
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || !SUPABASE_SECRET_KEY) {
   console.warn(
@@ -257,6 +265,19 @@ function addPdfHeader(doc, title, subtitle) {
   doc.moveDown(1);
 }
 
+function addPdfBillingInfo(doc) {
+  const startY = doc.y;
+  const boxWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  doc.rect(doc.page.margins.left, startY, boxWidth, 76).strokeColor('#dddddd').stroke();
+  doc.strokeColor('#000000');
+  doc.font('Helvetica-Bold').fontSize(10).fillColor('#000000').text('Facturer à', doc.page.margins.left + 10, startY + 10);
+  doc.font('Helvetica').fontSize(9).fillColor('#000000').text(safePdfText(INTERGLOBE_BILLING_INFO.name), doc.page.margins.left + 10, startY + 26);
+  doc.text(safePdfText(INTERGLOBE_BILLING_INFO.address1), doc.page.margins.left + 10, startY + 39);
+  doc.text(safePdfText(INTERGLOBE_BILLING_INFO.address2), doc.page.margins.left + 10, startY + 52);
+  doc.font('Helvetica-Bold').fontSize(9).text(safePdfText(`${INTERGLOBE_BILLING_INFO.vat} - ${INTERGLOBE_BILLING_INFO.email}`), doc.page.margins.left + 300, startY + 26, { width: 210 });
+  doc.y = startY + 92;
+}
+
 function addPdfKeyValue(doc, label, value, x, y, width = 240) {
   doc.font('Helvetica').fontSize(9).fillColor('#666666').text(safePdfText(label), x, y, { width });
   doc.font('Helvetica-Bold').fontSize(12).fillColor('#000000').text(safePdfText(value), x, y + 13, { width });
@@ -319,6 +340,7 @@ function buildDriverMonthlyRecapPdf(res, profile, recap) {
   doc.pipe(res);
 
   addPdfHeader(doc, 'Récapitulatif mensuel sous-traitant', `Mois: ${recap.month} - Chauffeur: ${profile.full_name || profile.username}`);
+  addPdfBillingInfo(doc);
 
   const y = doc.y;
   addPdfKeyValue(doc, 'Courses du mois', String(recap.totals.allCount), 36, y);
@@ -367,6 +389,7 @@ function buildDispatchSubcontractorRecapPdf(res, recap) {
   doc.pipe(res);
 
   addPdfHeader(doc, 'Récapitulatif sous-traitants', `Mois: ${recap.month} - Vue dispatch`);
+  addPdfBillingInfo(doc);
 
   const y = doc.y;
   addPdfKeyValue(doc, 'Courses du mois', String(recap.totals.allCount), 36, y);
@@ -1053,6 +1076,46 @@ async function generateToursFromTemplate(templateId, rangeStart, rangeEnd, creat
   return createdCount;
 }
 
+
+async function createDriverAlert(payload) {
+  try {
+    const { error } = await admin.from('driver_alerts').insert({
+      alert_type: payload.alert_type,
+      level: payload.level || 'warning',
+      title: payload.title,
+      message: payload.message,
+      tour_id: payload.tour_id || null,
+      stop_id: payload.stop_id || null,
+      driver_profile_id: payload.driver_profile_id || null,
+      distance_km: payload.distance_km ?? null,
+      latitude: payload.latitude ?? null,
+      longitude: payload.longitude ?? null,
+      created_at: nowIso()
+    });
+    if (error) console.error('[DRIVER_ALERT] insert error =', error);
+  } catch (error) {
+    console.error('[DRIVER_ALERT] fatal =', error);
+  }
+}
+
+async function fetchRecentDriverAlerts(limit = 10) {
+  try {
+    const { data, error } = await admin
+      .from('driver_alerts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.error('[DRIVER_ALERT] fetch error =', error);
+      return [];
+    }
+    return data || [];
+  } catch (error) {
+    console.error('[DRIVER_ALERT] fetch fatal =', error);
+    return [];
+  }
+}
+
 async function buildDispatchDashboard() {
   const profiles = await fetchAllProfiles();
   const tours = await fetchTours();
@@ -1086,6 +1149,16 @@ async function buildDispatchDashboard() {
       });
     }
   }
+
+  const recentDriverAlerts = await fetchRecentDriverAlerts(10);
+  recentDriverAlerts.forEach((alert) => {
+    alerts.push({
+      level: alert.level || 'warning',
+      title: alert.title || 'Alerte chauffeur',
+      text: alert.message || '',
+      href: alert.tour_id ? `/dispatch/tours/${alert.tour_id}` : '/dispatch'
+    });
+  });
 
   const proofsTodayCount = activeTourDetails.reduce((sum, tour) => sum + (tour?.metrics.proofCount || 0), 0);
   const noDriverCount = toursToday.filter((tour) => !tour.driver_id).length;
@@ -2407,10 +2480,54 @@ app.post('/driver/stops/:id/arrive', requireRole('driver'), async (req, res) => 
   try {
     const { data: stop, error: fetchError } = await admin
       .from('tour_stops')
-      .select('id, tour_id')
+      .select('*')
       .eq('id', req.params.id)
       .single();
     if (fetchError) throw fetchError;
+
+    const { data: tour, error: tourError } = await admin
+      .from('tours')
+      .select('id, reference_code, assigned_driver_profile_id')
+      .eq('id', stop.tour_id)
+      .single();
+    if (tourError) throw tourError;
+
+    if (tour.assigned_driver_profile_id !== req.session.user.profile_id) {
+      return res.status(403).send('Accès refusé');
+    }
+
+    const driverLat = parseNumberOrNull(req.body.latitude);
+    const driverLng = parseNumberOrNull(req.body.longitude);
+    const stopLat = parseNumberOrNull(stop.latitude);
+    const stopLng = parseNumberOrNull(stop.longitude);
+
+    if (driverLat !== null && driverLng !== null && stopLat !== null && stopLng !== null) {
+      const distanceKm = haversineKm(driverLat, driverLng, stopLat, stopLng);
+      if (distanceKm > ARRIVAL_GEOFENCE_RADIUS_KM) {
+        await createDriverAlert({
+          alert_type: 'arrival_outside_zone',
+          level: 'danger',
+          title: 'Arrivée hors zone',
+          message: `${req.session.user.full_name || req.session.user.username} a confirmé l’arrivée sur ${tour.reference_code || stop.tour_id}, mais il est à ${distanceKm.toFixed(2)} km de l’arrêt ${stop.name || ''}. Zone autorisée: ${Math.round(ARRIVAL_GEOFENCE_RADIUS_KM * 1000)} m.`,
+          tour_id: stop.tour_id,
+          stop_id: stop.id,
+          driver_profile_id: req.session.user.profile_id,
+          distance_km: Number(distanceKm.toFixed(3)),
+          latitude: driverLat,
+          longitude: driverLng
+        });
+      }
+    } else if (stopLat !== null && stopLng !== null) {
+      await createDriverAlert({
+        alert_type: 'arrival_without_gps',
+        level: 'warning',
+        title: 'Arrivée sans position GPS',
+        message: `${req.session.user.full_name || req.session.user.username} a confirmé l’arrivée sur ${tour.reference_code || stop.tour_id}, mais la position GPS du téléphone n’a pas été reçue.`,
+        tour_id: stop.tour_id,
+        stop_id: stop.id,
+        driver_profile_id: req.session.user.profile_id
+      });
+    }
 
     const { error } = await admin
       .from('tour_stops')
@@ -2443,18 +2560,26 @@ app.post('/driver/stops/:id/depart', requireRole('driver'), async (req, res) => 
       .limit(1);
     if (proofsError) throw proofsError;
 
-    if (!proofs || proofs.length === 0) {
-      flash(req, 'Ajoute au moins une preuve de livraison avant de partir.');
+    const hasProofs = proofs && proofs.length > 0;
+    const noPhotosChecked = Boolean(req.body.no_photos);
+
+    if (!hasProofs && !noPhotosChecked) {
+      flash(req, 'Ajoute une preuve ou coche “Pas de photos” avant de partir.');
       return res.redirect(`/driver/tours/${stop.tour_id}`);
     }
 
     const { error } = await admin
       .from('tour_stops')
-      .update({ status: 'done', departed_at: nowIso() })
+      .update({
+        status: 'done',
+        departed_at: nowIso(),
+        no_photos: !hasProofs && noPhotosChecked,
+        no_photo_reason: !hasProofs && noPhotosChecked ? String(req.body.no_photo_reason || '').trim() || null : null
+      })
       .eq('id', req.params.id);
     if (error) throw error;
 
-    flash(req, 'Départ enregistré.');
+    flash(req, hasProofs ? 'Départ enregistré.' : 'Départ enregistré sans photo.');
     res.redirect(`/driver/tours/${stop.tour_id}`);
   } catch (error) {
     console.error(error);

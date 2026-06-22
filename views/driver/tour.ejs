@@ -99,7 +99,10 @@
 
     <% if (currentStop.status === 'pending') { %>
       <div class="form-actions top-gap" id="arriveBlock">
-        <form action="/driver/stops/<%= currentStop.id %>/arrive" method="POST" class="inline-form">
+        <form action="/driver/stops/<%= currentStop.id %>/arrive" method="POST" class="inline-form" id="arriveForm">
+          <input type="hidden" name="latitude" id="arriveLatitude" />
+          <input type="hidden" name="longitude" id="arriveLongitude" />
+          <input type="hidden" name="accuracy" id="arriveAccuracy" />
           <button class="btn primary" type="submit">Je suis arrivé</button>
         </form>
       </div>
@@ -108,7 +111,7 @@
     <% if (currentStop.status === 'arrived') { %>
       <section class="card top-gap" id="proofBlock">
         <h3>Preuves de livraison</h3>
-        <p class="muted">Ajoute au moins une photo avant de valider le départ.</p>
+        <p class="muted">Ajoute une photo si tu en as une. Si aucune photo n’est disponible, coche “Pas de photos” avant de valider le départ.</p>
 
         <form
           action="/driver/stops/<%= currentStop.id %>/proofs"
@@ -118,7 +121,7 @@
         >
           <label class="full">
             <span>Photos</span>
-            <input type="file" name="photos" accept="image/*" multiple required />
+            <input type="file" name="photos" accept="image/*" multiple />
           </label>
 
           <label class="full">
@@ -147,9 +150,17 @@
           <form
             action="/driver/stops/<%= currentStop.id %>/depart"
             method="POST"
-            class="inline-form"
+            class="stack"
             onsubmit="return confirm('Confirmer le départ de cet arrêt ?');"
           >
+            <label class="checkbox-line">
+              <input type="checkbox" name="no_photos" value="1" />
+              Pas de photos disponibles pour cet arrêt
+            </label>
+            <label>
+              <span>Raison si pas de photos</span>
+              <input type="text" name="no_photo_reason" placeholder="Exemple : client absent, photo interdite, marchandise déjà déposée..." />
+            </label>
             <button class="btn primary" type="submit">Valider départ</button>
           </form>
         </div>
@@ -202,6 +213,9 @@
   (function () {
     const tourId = <%- JSON.stringify(tour.id) %>;
     const gpsStatusEl = document.getElementById('gpsStatus');
+    const arriveLatitudeEl = document.getElementById('arriveLatitude');
+    const arriveLongitudeEl = document.getElementById('arriveLongitude');
+    const arriveAccuracyEl = document.getElementById('arriveAccuracy');
     let watchId = null;
     let lastSentAt = 0;
     let lastLat = null;
@@ -269,6 +283,9 @@
       watchId = navigator.geolocation.watchPosition(
         (position) => {
           const { latitude, longitude, accuracy } = position.coords;
+          if (arriveLatitudeEl) arriveLatitudeEl.value = latitude;
+          if (arriveLongitudeEl) arriveLongitudeEl.value = longitude;
+          if (arriveAccuracyEl) arriveAccuracyEl.value = accuracy || '';
           setGpsStatus('Position reçue');
           sendLocation(latitude, longitude, accuracy);
         },
